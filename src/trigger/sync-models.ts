@@ -25,8 +25,8 @@ interface ImageModel {
   provider: string;
   description: string;
   pricing: { perImage?: number; perSecond?: number };
-  supportedSizes: string[];
-  style: string[];
+  supportedSizes?: string[];
+  style?: string[];
   qualityScore?: number;
   speedScore?: number;
   maxResolution?: string;
@@ -43,9 +43,9 @@ interface VideoModel {
   name: string;
   provider: string;
   description: string;
-  pricing: { perSecond?: number };
-  maxDuration: number;
-  resolution: string[];
+  pricing: { perSecond?: number; perVideo?: number };
+  maxDuration?: number;
+  resolution?: string[];
   qualityScore?: number;
   motionScore?: number;
   fps?: number;
@@ -64,7 +64,7 @@ interface AudioModel {
   description: string;
   type: string;
   pricing: { perMinute?: number; perCharacter?: number; perSecond?: number; perOutput?: number };
-  languages: string[];
+  languages?: string[];
   qualityScore?: number;
   naturalness?: number;
   accuracy?: number;
