@@ -1,4 +1,3 @@
-import { schedules } from "@trigger.dev/sdk/v3";
 import { prisma } from "../lib/db.js";
 import { fetchOpenRouterModels } from "../lib/api/openrouter.js";
 import {
@@ -7,6 +6,7 @@ import {
   fetchReplicateAudioModels,
 } from "../lib/api/replicate.js";
 import { getBenchmark } from "../lib/data/benchmarks.js";
+import { getExternalAudioModels } from "../lib/data/external-audio.js";
 
 interface TextModel {
   id: string;
@@ -76,10 +76,7 @@ interface AudioModel {
   popularity: number;
 }
 
-export const syncAIModels = schedules.task({
-  id: "sync-ai-models",
-  cron: "0 0 * * *",
-  run: async () => {
+export async function syncAIModels() {
     const startTime = Date.now();
     console.log("Starting AI models sync...");
 
@@ -106,7 +103,29 @@ export const syncAIModels = schedules.task({
         fetchReplicateAudioModels(replicateToken),
       ]);
 
-      console.log(`Fetched: ${textModels.length} text, ${imageModels.length} image, ${videoModels.length} video, ${audioModels.length} audio models`);
+      const externalAudioModels = getExternalAudioModels();
+      const allAudioModels = [
+        ...audioModels,
+        ...externalAudioModels.map(m => ({
+          id: m.id,
+          name: m.name,
+          provider: m.provider,
+          description: m.description,
+          type: m.type,
+          pricing: { perCharacter: m.pricing.perCharacter },
+          languages: m.languages,
+          qualityScore: m.qualityScore,
+          naturalness: m.naturalness,
+          voiceCloning: m.voiceCloning,
+          emotionControl: m.emotionControl,
+          realtime: m.realtime,
+          runCount: m.runCount,
+          tags: m.tags,
+          popularity: m.popularity,
+        })),
+      ];
+
+      console.log(`Fetched: ${textModels.length} text, ${imageModels.length} image, ${videoModels.length} video, ${audioModels.length} replicate audio + ${externalAudioModels.length} external audio models`);
 
       console.log("Saving text models...");
       await saveTextModels(textModels);
@@ -118,7 +137,7 @@ export const syncAIModels = schedules.task({
       await saveVideoModels(videoModels);
 
       console.log("Saving audio models...");
-      await saveAudioModels(audioModels);
+      await saveAudioModels(allAudioModels);
 
       // Soft delete models that are no longer in API
       console.log("Checking for deleted models...");
@@ -126,11 +145,11 @@ export const syncAIModels = schedules.task({
         ...textModels.map(m => m.id),
         ...imageModels.map(m => m.id),
         ...videoModels.map(m => m.id),
-        ...audioModels.map(m => m.id),
+        ...allAudioModels.map(m => m.id),
       ];
       await softDeleteRemovedModels(allApiModelIds);
 
-      const totalCount = textModels.length + imageModels.length + videoModels.length + audioModels.length;
+      const totalCount = textModels.length + imageModels.length + videoModels.length + allAudioModels.length;
       const duration = Date.now() - startTime;
 
       await prisma.syncLog.create({
@@ -150,7 +169,7 @@ export const syncAIModels = schedules.task({
           text: textModels.length,
           image: imageModels.length,
           video: videoModels.length,
-          audio: audioModels.length,
+          audio: allAudioModels.length,
           total: totalCount,
         },
         duration,
@@ -171,8 +190,7 @@ export const syncAIModels = schedules.task({
       console.error("Sync failed:", errorMessage);
       throw error;
     }
-  },
-});
+}
 
 async function saveTextModels(models: TextModel[]) {
   for (const model of models) {

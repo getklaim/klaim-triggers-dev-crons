@@ -4,9 +4,9 @@
   "description": "AI model pricing data sync with Trigger.dev",
   "type": "module",
   "scripts": {
-    "build": "tsc",
-    "dev": "npx trigger dev",
-    "deploy": "npx trigger deploy",
+    "build": "prisma generate && tsc",
+    "start": "node dist/index.js",
+    "dev": "npx tsx src/index.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
@@ -27,14 +27,14 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.2.0",
     "@prisma/client": "^7.2.0",
-    "@trigger.dev/sdk": "^4.3.2",
+    "node-cron": "^3.0.3",
     "pg": "^8.16.3",
     "prisma": "^7.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.16.0",
-    "trigger.dev": "^4.3.2",
     "typescript": "^5.9.3"
   }
 }
