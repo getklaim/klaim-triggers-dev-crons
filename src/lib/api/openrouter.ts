@@ -162,9 +162,26 @@ function calculatePopularityFromElo(elo: number | null): number {
   return 0;
 }
 
-function getTagsFromElo(elo: number | null): string[] {
-  if (elo === null) return [];
-  if (elo >= 1430) return ['popular'];
+// Fallback: output token price per 1M tokens → popularity
+// 비쌀수록 flagship급 모델일 가능성 높음
+function calculatePopularityFromPrice(outputPricePerMillion: number): number {
+  if (outputPricePerMillion >= 100) return 75;  // ultra flagship ($100+/M)
+  if (outputPricePerMillion >= 30) return 65;   // flagship ($30-100/M)
+  if (outputPricePerMillion >= 10) return 55;   // high-end ($10-30/M)
+  if (outputPricePerMillion >= 3) return 40;    // mid-tier ($3-10/M)
+  if (outputPricePerMillion >= 1) return 25;    // budget ($1-3/M)
+  if (outputPricePerMillion >= 0.1) return 15;  // cheap ($0.1-1/M)
+  return 5;                                      // free-tier
+}
+
+function calculatePopularity(elo: number | null, outputPricePerMillion: number): number {
+  if (elo !== null) return calculatePopularityFromElo(elo);
+  return calculatePopularityFromPrice(outputPricePerMillion);
+}
+
+function getTags(elo: number | null, outputPricePerMillion: number): string[] {
+  if (elo !== null && elo >= 1430) return ['popular'];
+  if (elo === null && outputPricePerMillion >= 30) return ['popular'];
   return [];
 }
 
@@ -221,6 +238,7 @@ export async function fetchOpenRouterModels(): Promise<TextModel[]> {
       })
       .map((model: OpenRouterModel): TextModel => {
         const elo = findEloScore(model.id, eloMap);
+        const outputPrice = parseFloat(model.pricing?.completion || '0') * 1000000;
         return {
           id: model.id,
           name: model.name || model.id.split('/').pop() || model.id,
@@ -229,11 +247,11 @@ export async function fetchOpenRouterModels(): Promise<TextModel[]> {
           category: 'text' as const,
           pricing: {
             prompt: parseFloat(model.pricing?.prompt || '0') * 1000000,
-            completion: parseFloat(model.pricing?.completion || '0') * 1000000,
+            completion: outputPrice,
           },
           contextLength: model.context_length || 0,
-          tags: getTagsFromElo(elo),
-          popularity: calculatePopularityFromElo(elo),
+          tags: getTags(elo, outputPrice),
+          popularity: calculatePopularity(elo, outputPrice),
           updatedAt: new Date().toISOString(),
           capabilities: [],
         };
