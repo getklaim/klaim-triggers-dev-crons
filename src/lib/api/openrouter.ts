@@ -165,13 +165,13 @@ function calculatePopularityFromElo(elo: number | null): number {
 // Fallback: output token price per 1M tokens → popularity
 // 비쌀수록 flagship급 모델일 가능성 높음
 function calculatePopularityFromPrice(outputPricePerMillion: number): number {
-  if (outputPricePerMillion >= 100) return 75;  // ultra flagship ($100+/M)
-  if (outputPricePerMillion >= 30) return 65;   // flagship ($30-100/M)
-  if (outputPricePerMillion >= 10) return 55;   // high-end ($10-30/M)
-  if (outputPricePerMillion >= 3) return 40;    // mid-tier ($3-10/M)
-  if (outputPricePerMillion >= 1) return 25;    // budget ($1-3/M)
-  if (outputPricePerMillion >= 0.1) return 15;  // cheap ($0.1-1/M)
-  return 5;                                      // free-tier
+  if (outputPricePerMillion >= 100) return 85;
+  if (outputPricePerMillion >= 30) return 75;
+  if (outputPricePerMillion >= 10) return 65;
+  if (outputPricePerMillion >= 3) return 50;
+  if (outputPricePerMillion >= 1) return 30;
+  if (outputPricePerMillion >= 0.1) return 15;
+  return 5;
 }
 
 function calculatePopularity(elo: number | null, outputPricePerMillion: number): number {
