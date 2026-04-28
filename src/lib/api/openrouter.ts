@@ -37,26 +37,15 @@ async function fetchArenaLeaderboard(): Promise<Map<string, number>> {
 
     const html = await response.text();
 
-    // Extract model entries from embedded JSON: "publicName":"model-name" and "score":1234
-    const modelPattern = /"publicName"\s*:\s*"([^"]+)"[^}]*?"rank"\s*:\s*\{[^}]*?"overall"\s*:\s*(\d+)/g;
+    // HTML table: title="model-name"> <span>model-name</span> ... <span class="text-sm">1493</span>
+    const rowPattern = /title="([a-zA-Z0-9._-]+)">\s*<span class="max-w-full truncate">[^<]+<\/span>[\s\S]*?<span class="text-sm">(\d{3,4})<\/span>/g;
     let match;
-    while ((match = modelPattern.exec(html)) !== null) {
+    while ((match = rowPattern.exec(html)) !== null) {
       const name = match[1];
       const score = parseInt(match[2], 10);
-      if (name && score > 0) {
+      if (name && score > 800 && score < 2000) {
         const normalizedKey = normalizeModelName(name);
-        eloMap.set(normalizedKey, score);
-      }
-    }
-
-    // Fallback: try simpler pattern for score extraction
-    if (eloMap.size === 0) {
-      const simplePattern = /"(?:publicName|displayName)"\s*:\s*"([^"]+)"[\s\S]*?"(?:score|arena_score|elo)"\s*:\s*(\d+)/g;
-      while ((match = simplePattern.exec(html)) !== null) {
-        const name = match[1];
-        const score = parseInt(match[2], 10);
-        if (name && score > 800 && score < 2000) {
-          const normalizedKey = normalizeModelName(name);
+        if (!eloMap.has(normalizedKey)) {
           eloMap.set(normalizedKey, score);
         }
       }
