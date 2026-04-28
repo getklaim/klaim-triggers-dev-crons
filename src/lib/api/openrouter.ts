@@ -38,7 +38,7 @@ async function fetchArenaLeaderboard(): Promise<Map<string, number>> {
     const html = await response.text();
 
     // HTML table: title="model-name"> <span>model-name</span> ... <span class="text-sm">1493</span>
-    const rowPattern = /title="([a-zA-Z0-9._-]+)">\s*<span class="max-w-full truncate">[^<]+<\/span>[\s\S]*?<span class="text-sm">(\d{3,4})<\/span>/g;
+    const rowPattern = /title="([^"]+)">\s*<span class="max-w-full truncate">[^<]+<\/span>[\s\S]*?<span class="text-sm">(\d{3,4})<\/span>/g;
     let match;
     while ((match = rowPattern.exec(html)) !== null) {
       const name = match[1];
