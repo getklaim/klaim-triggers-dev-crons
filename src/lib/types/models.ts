@@ -113,6 +113,7 @@ export interface TextModel {
   contextLength: number;
   tags: string[];
   popularity: number;
+  arenaElo: number | null;
   updatedAt: string;
   capabilities: string[];
 }

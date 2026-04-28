@@ -255,6 +255,7 @@ export async function fetchOpenRouterModels(): Promise<TextModel[]> {
           contextLength: model.context_length || 0,
           tags: getTags(elo, outputPrice),
           popularity: calculatePopularity(elo, outputPrice),
+          arenaElo: elo,
           updatedAt: new Date().toISOString(),
           capabilities: [],
         };

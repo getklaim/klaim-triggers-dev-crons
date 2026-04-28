@@ -17,6 +17,7 @@ interface TextModel {
   contextLength: number;
   tags: string[];
   popularity: number;
+  arenaElo: number | null;
 }
 
 interface ImageModel {
@@ -212,7 +213,7 @@ async function saveTextModels(models: TextModel[]) {
         math: benchmark?.math,
         speed: benchmark?.speed,
         latency: benchmark?.latency,
-        arenaElo: benchmark?.arenaElo,
+        arenaElo: model.arenaElo ?? benchmark?.arenaElo,
       },
       create: {
         modelId: model.id,
@@ -230,7 +231,7 @@ async function saveTextModels(models: TextModel[]) {
         math: benchmark?.math,
         speed: benchmark?.speed,
         latency: benchmark?.latency,
-        arenaElo: benchmark?.arenaElo,
+        arenaElo: model.arenaElo ?? benchmark?.arenaElo,
       },
     });
 
