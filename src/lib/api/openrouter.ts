@@ -24,7 +24,7 @@ async function fetchArenaLeaderboard(): Promise<Map<string, number>> {
 
   try {
     // Arena API is blocked (403), scrape leaderboard page instead
-    const response = await fetch('https://arena.ai/leaderboard', {
+    const response = await fetch('https://arena.ai/leaderboard/text', {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
       },
