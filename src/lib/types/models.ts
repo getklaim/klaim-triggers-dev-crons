@@ -114,6 +114,7 @@ export interface TextModel {
   tags: string[];
   popularity: number;
   arenaElo: number | null;
+  modelUrl?: string;
   updatedAt: string;
   capabilities: string[];
 }

@@ -20,6 +20,7 @@ model AiModel {
   type        ModelType
   name        String
   description String?
+  modelUrl    String?   @map("model_url")
 
   // Common fields
   tags       String[] @default([])

@@ -1,4 +1,4 @@
-import type { TextModel } from '../types/models.js';
+import type { TextModel } from "../types/models.js";
 
 interface OpenRouterModel {
   id: string;
@@ -18,35 +18,37 @@ interface OpenRouterResponse {
   data: OpenRouterModel[];
 }
 
-
-async function fetchArenaLeaderboard(): Promise<Map<string, number>> {
-  const eloMap = new Map<string, number>();
+async function fetchArenaLeaderboard(): Promise<
+  Map<string, { score: number; url: string }>
+> {
+  const eloMap = new Map<string, { score: number; url: string }>();
 
   try {
-    // Arena API is blocked (403), scrape leaderboard page instead
-    const response = await fetch('https://arena.ai/leaderboard/text', {
+    const response = await fetch("https://arena.ai/leaderboard/text", {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
       },
     });
 
     if (!response.ok) {
-      console.warn('Arena page not available, using fallback ELO data');
+      console.warn("Arena page not available, using fallback ELO data");
       return getFallbackEloData();
     }
 
     const html = await response.text();
 
-    // HTML table: title="model-name"> <span>model-name</span> ... <span class="text-sm">1493</span>
-    const rowPattern = /title="([^"]+)">\s*<span class="max-w-full truncate">[^<]+<\/span>[\s\S]*?<span class="text-sm">(\d{3,4})<\/span>/g;
+    const rowPattern =
+      /href="(https?:\/\/[^"]+)"[^>]*title="([^"]+)">\s*<span class="max-w-full truncate">[^<]+<\/span>[\s\S]*?<span class="text-sm">(\d{3,4})<\/span>/g;
     let match;
     while ((match = rowPattern.exec(html)) !== null) {
-      const name = match[1];
-      const score = parseInt(match[2], 10);
+      const url = match[1];
+      const name = match[2];
+      const score = parseInt(match[3], 10);
       if (name && score > 800 && score < 2000) {
         const normalizedKey = normalizeModelName(name);
         if (!eloMap.has(normalizedKey)) {
-          eloMap.set(normalizedKey, score);
+          eloMap.set(normalizedKey, { score, url });
         }
       }
     }
@@ -56,10 +58,10 @@ async function fetchArenaLeaderboard(): Promise<Map<string, number>> {
       return eloMap;
     }
 
-    console.warn('No models parsed from Arena page, using fallback');
+    console.warn("No models parsed from Arena page, using fallback");
     return getFallbackEloData();
   } catch (error) {
-    console.warn('Failed to fetch Arena leaderboard, using fallback:', error);
+    console.warn("Failed to fetch Arena leaderboard, using fallback:", error);
     return getFallbackEloData();
   }
 }
@@ -67,97 +69,96 @@ async function fetchArenaLeaderboard(): Promise<Map<string, number>> {
 function normalizeModelName(name: string): string {
   return name
     .toLowerCase()
-    .replace(/[-_\s]/g, '')
-    .replace(/20\d{6}/g, '')
-    .replace(/\d+k$/g, '');
+    .replace(/[-_\s]/g, "")
+    .replace(/20\d{6}/g, "")
+    .replace(/\d+k$/g, "");
 }
 
-function findEloScore(modelId: string, eloMap: Map<string, number>): number | null {
-  // Extract model name without provider prefix (e.g. "anthropic/claude-opus-4.7" -> "claude-opus-4.7")
-  const modelName = modelId.split('/').pop() || modelId;
+function findEloScore(
+  modelId: string,
+  eloMap: Map<string, { score: number; url: string }>,
+): { score: number; url: string } | null {
+  const modelName = modelId.split("/").pop() || modelId;
   const normalized = normalizeModelName(modelName);
 
-  // 1. Exact match (after normalization)
   if (eloMap.has(normalized)) {
     return eloMap.get(normalized)!;
   }
 
-  // 2. Strip version suffixes for base model match (e.g. "claudeopus4.7" -> try "claudeopus47")
-  const withoutDots = normalized.replace(/\./g, '');
+  const withoutDots = normalized.replace(/\./g, "");
   if (eloMap.has(withoutDots)) {
     return eloMap.get(withoutDots)!;
   }
 
-  // 3. Find best match: prefer longest matching key to avoid short-key collisions
-  let bestMatch: { score: number; keyLen: number } | null = null;
-  for (const [key, score] of eloMap) {
-    if (key.length < 5) continue; // skip overly short keys
+  let bestMatch: { score: number; url: string; keyLen: number } | null = null;
+  for (const [key, entry] of eloMap) {
+    if (key.length < 5) continue;
     if (normalized === key || withoutDots === key) {
-      return score;
+      return entry;
     }
     if (normalized.includes(key) || key.includes(normalized)) {
       if (!bestMatch || key.length > bestMatch.keyLen) {
-        bestMatch = { score, keyLen: key.length };
+        bestMatch = { score: entry.score, url: entry.url, keyLen: key.length };
       }
     }
   }
 
-  return bestMatch?.score ?? null;
+  return bestMatch ? { score: bestMatch.score, url: bestMatch.url } : null;
 }
 
-function getFallbackEloData(): Map<string, number> {
+function getFallbackEloData(): Map<string, { score: number; url: string }> {
   const fallbackData: Record<string, number> = {
-    'gemini3pro': 1490,
-    'grok41': 1477,
-    'gemini3flash': 1472,
-    'claudeopus45': 1467,
-    'gpt51': 1458,
-    'gemini25pro': 1451,
-    'claudesonnet45': 1450,
-    'claudeopus41': 1445,
-    'gpt52': 1445,
-    'gpt45': 1444,
-    'chatgpt4o': 1442,
-    'glm47': 1441,
-    'qwen3max': 1434,
-    'o3': 1433,
-    'grok4': 1430,
-    'glm46': 1425,
-    'deepseekv32': 1418,
-    'deepseekr1': 1397,
-    'deepseekv3': 1394,
-    'claudesonnet4': 1390,
-    'claude37sonnet': 1389,
-    'o1': 1388,
-    'gpt41mini': 1382,
-    'qwen235b': 1374,
-    'qwen25max': 1374,
-    'claude35sonnet': 1373,
-    'mistralmedium': 1384,
-    'mistrallarge3': 1411,
-    'gemma327b': 1365,
-    'o3mini': 1364,
-    'gemini20flash': 1361,
-    'mistralsmall': 1356,
-    'llama4maverick': 1340,
-    'llama4scout': 1320,
-    'llama33': 1310,
-    'llama31': 1280,
-    'llama318b': 1250,
-    'llama3170b': 1270,
-    'llama31405b': 1300,
-    'phi4': 1280,
-    'phi3': 1200,
-    'commandrplus': 1260,
-    'commandr': 1220,
-    'yi34b': 1180,
-    'mixtral8x22b': 1240,
-    'mixtral8x7b': 1200,
+    gemini3pro: 1490,
+    grok41: 1477,
+    gemini3flash: 1472,
+    claudeopus45: 1467,
+    gpt51: 1458,
+    gemini25pro: 1451,
+    claudesonnet45: 1450,
+    claudeopus41: 1445,
+    gpt52: 1445,
+    gpt45: 1444,
+    chatgpt4o: 1442,
+    glm47: 1441,
+    qwen3max: 1434,
+    o3: 1433,
+    grok4: 1430,
+    glm46: 1425,
+    deepseekv32: 1418,
+    deepseekr1: 1397,
+    deepseekv3: 1394,
+    claudesonnet4: 1390,
+    claude37sonnet: 1389,
+    o1: 1388,
+    gpt41mini: 1382,
+    qwen235b: 1374,
+    qwen25max: 1374,
+    claude35sonnet: 1373,
+    mistralmedium: 1384,
+    mistrallarge3: 1411,
+    gemma327b: 1365,
+    o3mini: 1364,
+    gemini20flash: 1361,
+    mistralsmall: 1356,
+    llama4maverick: 1340,
+    llama4scout: 1320,
+    llama33: 1310,
+    llama31: 1280,
+    llama318b: 1250,
+    llama3170b: 1270,
+    llama31405b: 1300,
+    phi4: 1280,
+    phi3: 1200,
+    commandrplus: 1260,
+    commandr: 1220,
+    yi34b: 1180,
+    mixtral8x22b: 1240,
+    mixtral8x7b: 1200,
   };
 
-  const map = new Map<string, number>();
+  const map = new Map<string, { score: number; url: string }>();
   for (const [key, value] of Object.entries(fallbackData)) {
-    map.set(key, value);
+    map.set(key, { score: value, url: "" });
   }
   return map;
 }
@@ -174,7 +175,6 @@ function calculatePopularityFromElo(elo: number | null): number {
 }
 
 // Fallback: output token price per 1M tokens → popularity
-// 비쌀수록 flagship급 모델일 가능성 높음
 function calculatePopularityFromPrice(outputPricePerMillion: number): number {
   if (outputPricePerMillion >= 100) return 85;
   if (outputPricePerMillion >= 30) return 75;
@@ -185,14 +185,20 @@ function calculatePopularityFromPrice(outputPricePerMillion: number): number {
   return 5;
 }
 
-function calculatePopularity(elo: number | null, outputPricePerMillion: number): number {
-  if (elo !== null) return calculatePopularityFromElo(elo);
+function calculatePopularity(
+  elo: { score: number; url: string } | null,
+  outputPricePerMillion: number,
+): number {
+  if (elo !== null) return calculatePopularityFromElo(elo.score);
   return calculatePopularityFromPrice(outputPricePerMillion);
 }
 
-function getTags(elo: number | null, outputPricePerMillion: number): string[] {
-  if (elo !== null && elo >= 1430) return ['popular'];
-  if (elo === null && outputPricePerMillion >= 30) return ['popular'];
+function getTags(
+  elo: { score: number; url: string } | null,
+  outputPricePerMillion: number,
+): string[] {
+  if (elo !== null && elo.score >= 1430) return ["popular"];
+  if (elo === null && outputPricePerMillion >= 30) return ["popular"];
   return [];
 }
 
@@ -201,20 +207,20 @@ function isImageOrVisionModel(modelId: string, modelName: string): boolean {
   const lowerName = modelName.toLowerCase();
 
   const imageKeywords = [
-    'image',
-    'vision',
-    'img2img',
-    'txt2img',
-    'diffusion',
-    'dall-e',
-    'dalle',
-    'midjourney',
-    'stable-diffusion',
-    'flux',
-    'imagen',
-    'ideogram',
-    'recraft',
-    'playground',
+    "image",
+    "vision",
+    "img2img",
+    "txt2img",
+    "diffusion",
+    "dall-e",
+    "dalle",
+    "midjourney",
+    "stable-diffusion",
+    "flux",
+    "imagen",
+    "ideogram",
+    "recraft",
+    "playground",
   ];
 
   for (const keyword of imageKeywords) {
@@ -229,7 +235,7 @@ function isImageOrVisionModel(modelId: string, modelName: string): boolean {
 export async function fetchOpenRouterModels(): Promise<TextModel[]> {
   try {
     const [modelsResponse, eloMap] = await Promise.all([
-      fetch('https://openrouter.ai/api/v1/models'),
+      fetch("https://openrouter.ai/api/v1/models"),
       fetchArenaLeaderboard(),
     ]);
 
@@ -241,36 +247,38 @@ export async function fetchOpenRouterModels(): Promise<TextModel[]> {
 
     return data.data
       .filter((model: OpenRouterModel) => {
-        const promptPrice = parseFloat(model.pricing?.prompt || '0');
-        const completionPrice = parseFloat(model.pricing?.completion || '0');
+        const promptPrice = parseFloat(model.pricing?.prompt || "0");
+        const completionPrice = parseFloat(model.pricing?.completion || "0");
         if (promptPrice <= 0 && completionPrice <= 0) return false;
-        if (isImageOrVisionModel(model.id, model.name || '')) return false;
+        if (isImageOrVisionModel(model.id, model.name || "")) return false;
         return true;
       })
       .map((model: OpenRouterModel): TextModel => {
-        const elo = findEloScore(model.id, eloMap);
-        const outputPrice = parseFloat(model.pricing?.completion || '0') * 1000000;
+        const eloEntry = findEloScore(model.id, eloMap);
+        const outputPrice =
+          parseFloat(model.pricing?.completion || "0") * 1000000;
         return {
           id: model.id,
-          name: model.name || model.id.split('/').pop() || model.id,
-          provider: model.id.split('/')[0] || 'unknown',
-          description: model.description || '',
-          category: 'text' as const,
+          name: model.name || model.id.split("/").pop() || model.id,
+          provider: model.id.split("/")[0] || "unknown",
+          description: model.description || "",
+          category: "text" as const,
           pricing: {
-            prompt: parseFloat(model.pricing?.prompt || '0') * 1000000,
+            prompt: parseFloat(model.pricing?.prompt || "0") * 1000000,
             completion: outputPrice,
           },
           contextLength: model.context_length || 0,
-          tags: getTags(elo, outputPrice),
-          popularity: calculatePopularity(elo, outputPrice),
-          arenaElo: elo,
+          tags: getTags(eloEntry, outputPrice),
+          popularity: calculatePopularity(eloEntry, outputPrice),
+          arenaElo: eloEntry?.score ?? null,
+          modelUrl: eloEntry?.url || undefined,
           updatedAt: new Date().toISOString(),
           capabilities: [],
         };
       })
       .sort((a: TextModel, b: TextModel) => b.popularity - a.popularity);
   } catch (error) {
-    console.error('Failed to fetch OpenRouter models:', error);
+    console.error("Failed to fetch OpenRouter models:", error);
     return [];
   }
 }
