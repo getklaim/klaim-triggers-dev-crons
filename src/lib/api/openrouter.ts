@@ -18,43 +18,57 @@ interface OpenRouterResponse {
   data: OpenRouterModel[];
 }
 
-interface ArenaModel {
-  key: string;
-  model: string;
-  arena_score: number;
-  ci_95_upper: number;
-  ci_95_lower: number;
-  votes: number;
-  organization: string;
-  license: string;
-  knowledge_cutoff: string;
-}
-
-interface ArenaLeaderboardResponse {
-  data: ArenaModel[];
-  lastUpdated: string;
-  totalVotes: number;
-}
 
 async function fetchArenaLeaderboard(): Promise<Map<string, number>> {
   const eloMap = new Map<string, number>();
 
   try {
-    const response = await fetch('https://lmarena.ai/api/v1/arena/text/latest');
+    // Arena API is blocked (403), scrape leaderboard page instead
+    const response = await fetch('https://arena.ai/leaderboard', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+      },
+    });
 
     if (!response.ok) {
-      console.warn('Arena API not available, using fallback ELO data');
+      console.warn('Arena page not available, using fallback ELO data');
       return getFallbackEloData();
     }
 
-    const data = (await response.json()) as ArenaLeaderboardResponse;
+    const html = await response.text();
 
-    for (const model of data.data) {
-      const normalizedKey = normalizeModelName(model.model);
-      eloMap.set(normalizedKey, model.arena_score);
+    // Extract model entries from embedded JSON: "publicName":"model-name" and "score":1234
+    const modelPattern = /"publicName"\s*:\s*"([^"]+)"[^}]*?"rank"\s*:\s*\{[^}]*?"overall"\s*:\s*(\d+)/g;
+    let match;
+    while ((match = modelPattern.exec(html)) !== null) {
+      const name = match[1];
+      const score = parseInt(match[2], 10);
+      if (name && score > 0) {
+        const normalizedKey = normalizeModelName(name);
+        eloMap.set(normalizedKey, score);
+      }
     }
 
-    return eloMap;
+    // Fallback: try simpler pattern for score extraction
+    if (eloMap.size === 0) {
+      const simplePattern = /"(?:publicName|displayName)"\s*:\s*"([^"]+)"[\s\S]*?"(?:score|arena_score|elo)"\s*:\s*(\d+)/g;
+      while ((match = simplePattern.exec(html)) !== null) {
+        const name = match[1];
+        const score = parseInt(match[2], 10);
+        if (name && score > 800 && score < 2000) {
+          const normalizedKey = normalizeModelName(name);
+          eloMap.set(normalizedKey, score);
+        }
+      }
+    }
+
+    if (eloMap.size > 0) {
+      console.log(`Fetched ${eloMap.size} models from Arena leaderboard page`);
+      return eloMap;
+    }
+
+    console.warn('No models parsed from Arena page, using fallback');
+    return getFallbackEloData();
   } catch (error) {
     console.warn('Failed to fetch Arena leaderboard, using fallback:', error);
     return getFallbackEloData();
