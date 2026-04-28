@@ -67,34 +67,42 @@ async function fetchArenaLeaderboard(): Promise<Map<string, number>> {
 function normalizeModelName(name: string): string {
   return name
     .toLowerCase()
-    .replace(/[-_]/g, '')
-    .replace(/\s+/g, '')
+    .replace(/[-_\s]/g, '')
     .replace(/20\d{6}/g, '')
-    .replace(/preview/g, '')
-    .replace(/latest/g, '')
-    .replace(/thinking/g, '')
     .replace(/\d+k$/g, '');
 }
 
 function findEloScore(modelId: string, eloMap: Map<string, number>): number | null {
-  const normalized = normalizeModelName(modelId);
-
-  for (const [key, score] of eloMap) {
-    if (normalized.includes(key) || key.includes(normalized)) {
-      return score;
-    }
-  }
-
+  // Extract model name without provider prefix (e.g. "anthropic/claude-opus-4.7" -> "claude-opus-4.7")
   const modelName = modelId.split('/').pop() || modelId;
-  const normalizedName = normalizeModelName(modelName);
+  const normalized = normalizeModelName(modelName);
 
+  // 1. Exact match (after normalization)
+  if (eloMap.has(normalized)) {
+    return eloMap.get(normalized)!;
+  }
+
+  // 2. Strip version suffixes for base model match (e.g. "claudeopus4.7" -> try "claudeopus47")
+  const withoutDots = normalized.replace(/\./g, '');
+  if (eloMap.has(withoutDots)) {
+    return eloMap.get(withoutDots)!;
+  }
+
+  // 3. Find best match: prefer longest matching key to avoid short-key collisions
+  let bestMatch: { score: number; keyLen: number } | null = null;
   for (const [key, score] of eloMap) {
-    if (normalizedName.includes(key) || key.includes(normalizedName)) {
+    if (key.length < 5) continue; // skip overly short keys
+    if (normalized === key || withoutDots === key) {
       return score;
+    }
+    if (normalized.includes(key) || key.includes(normalized)) {
+      if (!bestMatch || key.length > bestMatch.keyLen) {
+        bestMatch = { score, keyLen: key.length };
+      }
     }
   }
 
-  return null;
+  return bestMatch?.score ?? null;
 }
 
 function getFallbackEloData(): Map<string, number> {
