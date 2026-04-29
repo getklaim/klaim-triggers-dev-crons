@@ -206,7 +206,7 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
     const imageModels: ImageModel[] = filtered.map(item => {
       const priceData = parseFalPrice(item.pricingInfoOverride, 'image');
       if (item.title.includes('GPT') || item.title.includes('gpt') || item.title.includes('Qwen')) {
-        console.log(`[FalDebug] ${item.id} "${item.title}": parsed=${JSON.stringify(priceData)}`);
+        console.log(`[FalDebug] ${item.id} "${item.title}": parsed=${JSON.stringify(priceData)} raw="${item.pricingInfoOverride?.substring(0, 200)}"`);
       }
       const arena = findArenaScore(item.title || item.id, arenaMap);
 
