@@ -85,14 +85,28 @@ function parseFalPrice(
       return { perImage: 0.07 };
     }
 
-    // Pattern: "**$X.XX** per image" or "cost **$X.XX** per image"
+    // Pattern: "**$X.XX** per image"
     const perImageBold = pricingText.match(/\*\*\$([0-9]+\.?[0-9]*)\*\*[^.]*per image/i);
     if (perImageBold) {
       const price = parseFloat(perImageBold[1]);
       if (price > 0) return { perImage: price };
     }
 
-    // Pattern: "$X.XX for 1024x1024" (GPT-Image style, take first/lowest quality)
+    // Pattern: "$X.XX per image" (without bold)
+    const perImagePlain = pricingText.match(/\$([0-9]+\.?[0-9]*)\s+per\s+image/i);
+    if (perImagePlain) {
+      const price = parseFloat(perImagePlain[1]);
+      if (price > 0) return { perImage: price };
+    }
+
+    // Pattern: "**X.XX$**" (dollar sign after number)
+    const reverseDollar = pricingText.match(/\*\*([0-9]+\.?[0-9]*)\$\*\*/);
+    if (reverseDollar) {
+      const price = parseFloat(reverseDollar[1]);
+      if (price > 0) return { perImage: price };
+    }
+
+    // Pattern: "$X.XX for 1024x1024" (GPT-Image style)
     const perOutputImage = pricingText.match(/\$([0-9]+\.?[0-9]*)\s+for\s+1024x1024/i);
     if (perOutputImage) {
       const price = parseFloat(perOutputImage[1]);
@@ -115,15 +129,28 @@ function parseFalPrice(
   }
 
   if (type === 'video') {
-    // Check for per-second pricing patterns
-    const perSecondPattern = /\*\*\$([0-9]+\.?[0-9]*)\/second\*\*|\*\*\$([0-9]+\.?[0-9]*)\*\*[^*]*per\s+second/i;
-    const perSecondMatch = pricingText.match(perSecondPattern);
-    if (perSecondMatch) {
-      const price = parseFloat(perSecondMatch[1] || perSecondMatch[2]);
+    // Pattern: "**$X.XX/second**" or "**$X.XX** per second"
+    const perSecondBold = pricingText.match(/\*\*\$([0-9]+\.?[0-9]*)\/second\*\*|\*\*\$([0-9]+\.?[0-9]*)\*\*[^*]*per\s+second/i);
+    if (perSecondBold) {
+      const price = parseFloat(perSecondBold[1] || perSecondBold[2]);
       if (price > 0) return { perSecond: price };
     }
 
-    // Check for "charged" pattern (often per second)
+    // Pattern: "$X.XX per second" (without bold)
+    const perSecondPlain = pricingText.match(/\$([0-9]+\.?[0-9]*)\s+per\s+second/i);
+    if (perSecondPlain) {
+      const price = parseFloat(perSecondPlain[1]);
+      if (price > 0) return { perSecond: price };
+    }
+
+    // Pattern: "X.XX $ per video second" (dollar after number)
+    const reverseDollarSec = pricingText.match(/([0-9]+\.?[0-9]*)\s*\$\s*per\s+(?:video\s+)?second/i);
+    if (reverseDollarSec) {
+      const price = parseFloat(reverseDollarSec[1]);
+      if (price > 0) return { perSecond: price };
+    }
+
+    // Pattern: "charged **$X.XX**"
     const chargedPattern = /charged\s+\*\*\$([0-9]+\.?[0-9]*)\*\*/i;
     const chargedMatch = pricingText.match(chargedPattern);
     if (chargedMatch) {
@@ -131,7 +158,14 @@ function parseFalPrice(
       if (price > 0) return { perSecond: price };
     }
 
-    // Fallback: use first bold price as per-video
+    // Pattern: "X.XX $ for every ... video" (per video)
+    const reverseDollarVideo = pricingText.match(/([0-9]+\.?[0-9]*)\s*\$\s*for\s+every/i);
+    if (reverseDollarVideo) {
+      const price = parseFloat(reverseDollarVideo[1]);
+      if (price > 0) return { perVideo: price };
+    }
+
+    // Fallback: first bold price as per-video
     if (matches.length > 0) {
       const price = parseFloat(matches[0][1]);
       if (price > 0) return { perVideo: price };
@@ -242,7 +276,7 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
 
     const deduplicated = deduplicateByFamily(
       imageModels,
-      m => m.modelFamily || m.id,
+      m => m.modelFamily || m.title || m.id,
       falModelMap
     );
 
@@ -302,7 +336,7 @@ export async function fetchFalVideoModels(): Promise<VideoModel[]> {
 
     const deduplicated = deduplicateByFamily(
       videoModels,
-      m => m.modelFamily || m.id,
+      m => m.modelFamily || m.title || m.id,
       falModelMap
     );
 
@@ -361,7 +395,7 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
 
     const deduplicated = deduplicateByFamily(
       audioModels,
-      m => m.modelFamily || m.id,
+      m => m.modelFamily || m.title || m.id,
       falModelMap
     );
 
