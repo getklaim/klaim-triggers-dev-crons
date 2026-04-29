@@ -108,6 +108,7 @@ function parseFalPrice(
       const price = parseFloat(matches[0][1]);
       if (price > 0 && price < 10) return { perImage: price };
     }
+    console.log(`[FalPrice] No image price parsed for: ${pricingText.substring(0, 100)}`);
     return {};
   }
 
@@ -204,6 +205,9 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
 
     const imageModels: ImageModel[] = filtered.map(item => {
       const priceData = parseFalPrice(item.pricingInfoOverride, 'image');
+      if (item.title.includes('GPT') || item.title.includes('gpt') || item.title.includes('Qwen')) {
+        console.log(`[FalDebug] ${item.id} "${item.title}": parsed=${JSON.stringify(priceData)}`);
+      }
       const arena = findArenaScore(item.title || item.id, arenaMap);
 
       // Derive popularity from Arena score when available (score >= 1200 yields > 0)
