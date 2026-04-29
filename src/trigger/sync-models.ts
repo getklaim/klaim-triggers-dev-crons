@@ -1,10 +1,6 @@
 import { prisma } from "../lib/db.js";
 import { fetchOpenRouterModels } from "../lib/api/openrouter.js";
-import {
-  fetchReplicateImageModels,
-  fetchReplicateVideoModels,
-  fetchReplicateAudioModels,
-} from "../lib/api/replicate.js";
+import { fetchFalImageModels, fetchFalVideoModels, fetchFalAudioModels } from "../lib/api/fal.js";
 import { getBenchmark } from "../lib/data/benchmarks.js";
 import { getExternalAudioModels } from "../lib/data/external-audio.js";
 
@@ -82,27 +78,13 @@ export async function syncAIModels() {
     const startTime = Date.now();
     console.log("Starting AI models sync...");
 
-    const replicateToken = process.env.REPLICATE_API_TOKEN;
-    if (!replicateToken) {
-      console.error("REPLICATE_API_TOKEN not configured");
-      await prisma.syncLog.create({
-        data: {
-          syncType: "full",
-          status: "failed",
-          errorMessage: "REPLICATE_API_TOKEN not configured",
-          duration: Date.now() - startTime,
-        },
-      });
-      return { success: false, error: "REPLICATE_API_TOKEN not configured" };
-    }
-
     try {
       console.log("Fetching models from APIs...");
       const [textModels, imageModels, videoModels, audioModels] = await Promise.all([
         fetchOpenRouterModels(),
-        fetchReplicateImageModels(replicateToken),
-        fetchReplicateVideoModels(replicateToken),
-        fetchReplicateAudioModels(replicateToken),
+        fetchFalImageModels(),
+        fetchFalVideoModels(),
+        fetchFalAudioModels(),
       ]);
 
       const externalAudioModels = getExternalAudioModels();

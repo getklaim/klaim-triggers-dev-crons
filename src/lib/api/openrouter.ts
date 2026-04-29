@@ -1,4 +1,9 @@
 import type { TextModel } from "../types/models.js";
+import {
+  fetchArenaScores,
+  findArenaScore,
+  type ArenaEntry,
+} from "./arena.js";
 
 interface OpenRouterModel {
   id: string;
@@ -18,95 +23,7 @@ interface OpenRouterResponse {
   data: OpenRouterModel[];
 }
 
-async function fetchArenaLeaderboard(): Promise<
-  Map<string, { score: number; url: string }>
-> {
-  const eloMap = new Map<string, { score: number; url: string }>();
-
-  try {
-    const response = await fetch("https://arena.ai/leaderboard/text", {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-      },
-    });
-
-    if (!response.ok) {
-      console.warn("Arena page not available, using fallback ELO data");
-      return getFallbackEloData();
-    }
-
-    const html = await response.text();
-
-    const rowPattern =
-      /href="(https?:\/\/[^"]+)"[^>]*title="([^"]+)">\s*<span class="max-w-full truncate">[^<]+<\/span>[\s\S]*?<span class="text-sm">(\d{3,4})<\/span>/g;
-    let match;
-    while ((match = rowPattern.exec(html)) !== null) {
-      const url = match[1];
-      const name = match[2];
-      const score = parseInt(match[3], 10);
-      if (name && score > 800 && score < 2000) {
-        const normalizedKey = normalizeModelName(name);
-        if (!eloMap.has(normalizedKey)) {
-          eloMap.set(normalizedKey, { score, url });
-        }
-      }
-    }
-
-    if (eloMap.size > 0) {
-      console.log(`Fetched ${eloMap.size} models from Arena leaderboard page`);
-      return eloMap;
-    }
-
-    console.warn("No models parsed from Arena page, using fallback");
-    return getFallbackEloData();
-  } catch (error) {
-    console.warn("Failed to fetch Arena leaderboard, using fallback:", error);
-    return getFallbackEloData();
-  }
-}
-
-function normalizeModelName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[-_\s]/g, "")
-    .replace(/20\d{6}/g, "")
-    .replace(/\d+k$/g, "");
-}
-
-function findEloScore(
-  modelId: string,
-  eloMap: Map<string, { score: number; url: string }>,
-): { score: number; url: string } | null {
-  const modelName = modelId.split("/").pop() || modelId;
-  const normalized = normalizeModelName(modelName);
-
-  if (eloMap.has(normalized)) {
-    return eloMap.get(normalized)!;
-  }
-
-  const withoutDots = normalized.replace(/\./g, "");
-  if (eloMap.has(withoutDots)) {
-    return eloMap.get(withoutDots)!;
-  }
-
-  let bestMatch: { score: number; url: string; keyLen: number } | null = null;
-  for (const [key, entry] of eloMap) {
-    if (key.length < 5) continue;
-    if (normalized === key || withoutDots === key) {
-      return entry;
-    }
-    if (normalized.includes(key) || key.includes(normalized)) {
-      if (!bestMatch || key.length > bestMatch.keyLen) {
-        bestMatch = { score: entry.score, url: entry.url, keyLen: key.length };
-      }
-    }
-  }
-
-  return bestMatch ? { score: bestMatch.score, url: bestMatch.url } : null;
-}
-
-function getFallbackEloData(): Map<string, { score: number; url: string }> {
+function getFallbackEloData(): Map<string, ArenaEntry> {
   const fallbackData: Record<string, number> = {
     gemini3pro: 1490,
     grok41: 1477,
@@ -156,7 +73,7 @@ function getFallbackEloData(): Map<string, { score: number; url: string }> {
     mixtral8x7b: 1200,
   };
 
-  const map = new Map<string, { score: number; url: string }>();
+  const map = new Map<string, ArenaEntry>();
   for (const [key, value] of Object.entries(fallbackData)) {
     map.set(key, { score: value, url: "" });
   }
@@ -186,7 +103,7 @@ function calculatePopularityFromPrice(outputPricePerMillion: number): number {
 }
 
 function calculatePopularity(
-  elo: { score: number; url: string } | null,
+  elo: ArenaEntry | null,
   outputPricePerMillion: number,
 ): number {
   if (elo !== null) return calculatePopularityFromElo(elo.score);
@@ -194,7 +111,7 @@ function calculatePopularity(
 }
 
 function getTags(
-  elo: { score: number; url: string } | null,
+  elo: ArenaEntry | null,
   outputPricePerMillion: number,
 ): string[] {
   if (elo !== null && elo.score >= 1430) return ["popular"];
@@ -234,10 +151,12 @@ function isImageOrVisionModel(modelId: string, modelName: string): boolean {
 
 export async function fetchOpenRouterModels(): Promise<TextModel[]> {
   try {
-    const [modelsResponse, eloMap] = await Promise.all([
-      fetch("https://openrouter.ai/api/v1/models"),
-      fetchArenaLeaderboard(),
-    ]);
+    // Fetch text leaderboard; fall back to static data if scraping fails
+    const arenaScores = await fetchArenaScores("text");
+    const eloMap =
+      arenaScores.size > 0 ? arenaScores : getFallbackEloData();
+
+    const modelsResponse = await fetch("https://openrouter.ai/api/v1/models");
 
     if (!modelsResponse.ok) {
       throw new Error(`OpenRouter API error: ${modelsResponse.status}`);
@@ -254,7 +173,7 @@ export async function fetchOpenRouterModels(): Promise<TextModel[]> {
         return true;
       })
       .map((model: OpenRouterModel): TextModel => {
-        const eloEntry = findEloScore(model.id, eloMap);
+        const eloEntry = findArenaScore(model.id, eloMap);
         const outputPrice =
           parseFloat(model.pricing?.completion || "0") * 1000000;
         return {
