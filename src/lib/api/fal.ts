@@ -203,8 +203,7 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
         m.status === 'public' &&
         !m.removed &&
         !m.deprecated &&
-        m.title && m.title.length > 0 &&
-        m.pricingInfoOverride && m.pricingInfoOverride.length > 0
+        m.title && m.title.length > 0
     );
 
     const allImageModels = allModels.filter(m => m.category === 'text-to-image');
@@ -268,8 +267,7 @@ export async function fetchFalVideoModels(): Promise<VideoModel[]> {
         m.status === 'public' &&
         !m.removed &&
         !m.deprecated &&
-        m.title && m.title.length > 0 &&
-        m.pricingInfoOverride && m.pricingInfoOverride.length > 0
+        m.title && m.title.length > 0
     );
 
     const falModelMap = new Map<string, FalModel>(filtered.map(m => [m.id, m]));
@@ -334,8 +332,7 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
         m.status === 'public' &&
         !m.removed &&
         !m.deprecated &&
-        m.title && m.title.length > 0 &&
-        m.pricingInfoOverride && m.pricingInfoOverride.length > 0
+        m.title && m.title.length > 0
     );
 
     const falModelMap = new Map<string, FalModel>(filtered.map(m => [m.id, m]));
