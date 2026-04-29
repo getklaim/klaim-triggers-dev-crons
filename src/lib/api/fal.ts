@@ -82,9 +82,32 @@ function parseFalPrice(
   if (matches.length === 0) return {};
 
   if (type === 'image') {
-    // First bold price is usually per-image price
-    const price = parseFloat(matches[0][1]);
-    if (price > 0) return { perImage: price };
+    // Pattern: "**$X.XX** per image" or "cost **$X.XX** per image"
+    const perImageBold = pricingText.match(/\*\*\$([0-9]+\.?[0-9]*)\*\*[^.]*per image/i);
+    if (perImageBold) {
+      const price = parseFloat(perImageBold[1]);
+      if (price > 0) return { perImage: price };
+    }
+
+    // Pattern: "$X.XX for 1024x1024 ... per output image" (GPT-Image style)
+    const perOutputImage = pricingText.match(/\$([0-9]+\.?[0-9]*)\s+for\s+1024x1024/i);
+    if (perOutputImage) {
+      const price = parseFloat(perOutputImage[1]);
+      if (price > 0) return { perImage: price };
+    }
+
+    // Pattern: "X.XX per megapixel"
+    const perMegapixel = pricingText.match(/([0-9]+\.?[0-9]*)\s+per\s+megapixel/i);
+    if (perMegapixel) {
+      const price = parseFloat(perMegapixel[1]);
+      if (price > 0) return { perImage: price };
+    }
+
+    // Fallback: first bold price
+    if (matches.length > 0) {
+      const price = parseFloat(matches[0][1]);
+      if (price > 0 && price < 10) return { perImage: price };
+    }
     return {};
   }
 
