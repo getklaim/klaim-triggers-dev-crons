@@ -89,15 +89,15 @@ function parseFalPrice(
       if (price > 0) return { perImage: price };
     }
 
-    // Pattern: "$X.XX for 1024x1024 ... per output image" (GPT-Image style)
+    // Pattern: "$X.XX for 1024x1024" (GPT-Image style, take first/lowest quality)
     const perOutputImage = pricingText.match(/\$([0-9]+\.?[0-9]*)\s+for\s+1024x1024/i);
     if (perOutputImage) {
       const price = parseFloat(perOutputImage[1]);
       if (price > 0) return { perImage: price };
     }
 
-    // Pattern: "X.XX per megapixel"
-    const perMegapixel = pricingText.match(/([0-9]+\.?[0-9]*)\s+per\s+megapixel/i);
+    // Pattern: "X.XX per megapixel" (with or without $ sign)
+    const perMegapixel = pricingText.match(/\$?([0-9]+\.?[0-9]*)\s+per\s+megapixel/i);
     if (perMegapixel) {
       const price = parseFloat(perMegapixel[1]);
       if (price > 0) return { perImage: price };
