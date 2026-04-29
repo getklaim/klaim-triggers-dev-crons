@@ -79,8 +79,6 @@ function parseFalPrice(
   const boldPricePattern = /\*\*\$([0-9]+\.?[0-9]*)\*\*/g;
   const matches = [...pricingText.matchAll(boldPricePattern)];
 
-  if (matches.length === 0) return {};
-
   if (type === 'image') {
     // Pattern: "**$X.XX** per image" or "cost **$X.XX** per image"
     const perImageBold = pricingText.match(/\*\*\$([0-9]+\.?[0-9]*)\*\*[^.]*per image/i);
@@ -130,8 +128,10 @@ function parseFalPrice(
     }
 
     // Fallback: use first bold price as per-video
-    const price = parseFloat(matches[0][1]);
-    if (price > 0) return { perVideo: price };
+    if (matches.length > 0) {
+      const price = parseFloat(matches[0][1]);
+      if (price > 0) return { perVideo: price };
+    }
     return {};
   }
 
@@ -153,8 +153,10 @@ function parseFalPrice(
     }
 
     // Fallback: first bold price
-    const price = parseFloat(matches[0][1]);
-    if (price > 0) return { perSecond: price };
+    if (matches.length > 0) {
+      const price = parseFloat(matches[0][1]);
+      if (price > 0) return { perSecond: price };
+    }
     return {};
   }
 
