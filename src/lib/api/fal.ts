@@ -201,6 +201,12 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
         m.pricingInfoOverride && m.pricingInfoOverride.length > 0
     );
 
+    const allImageModels = allModels.filter(m => m.category === 'text-to-image');
+    const publicModels = allImageModels.filter(m => m.status === 'public' && !m.removed && !m.deprecated);
+    const withTitle = publicModels.filter(m => m.title && m.title.length > 0);
+    const withPricing = withTitle.filter(m => m.pricingInfoOverride && m.pricingInfoOverride.length > 0);
+    console.log(`[FalFilter] image: total=${allModels.length}, category=${allImageModels.length}, public=${publicModels.length}, withTitle=${withTitle.length}, withPricing=${withPricing.length}, filtered=${filtered.length}`);
+
     const falModelMap = new Map<string, FalModel>(filtered.map(m => [m.id, m]));
 
     const imageModels: ImageModel[] = filtered.map(item => {
