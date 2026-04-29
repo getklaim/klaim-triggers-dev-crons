@@ -80,6 +80,11 @@ function parseFalPrice(
   const matches = [...pricingText.matchAll(boldPricePattern)];
 
   if (type === 'image') {
+    // Token-based models: estimate per-image price (medium quality 1024x1024)
+    if (pricingText.includes('per 1M') && pricingText.includes('Image tokens')) {
+      return { perImage: 0.07 };
+    }
+
     // Pattern: "**$X.XX** per image" or "cost **$X.XX** per image"
     const perImageBold = pricingText.match(/\*\*\$([0-9]+\.?[0-9]*)\*\*[^.]*per image/i);
     if (perImageBold) {
@@ -101,12 +106,11 @@ function parseFalPrice(
       if (price > 0) return { perImage: price };
     }
 
-    // Fallback: first bold price
-    if (matches.length > 0) {
+    // Fallback: first bold price (skip token-based pricing)
+    if (matches.length > 0 && !pricingText.includes('per 1M') && !pricingText.includes('tokens')) {
       const price = parseFloat(matches[0][1]);
-      if (price > 0 && price < 10) return { perImage: price };
+      if (price > 0 && price < 1) return { perImage: price };
     }
-    console.log(`[FalPrice] No image price parsed for: ${pricingText.substring(0, 100)}`);
     return {};
   }
 
@@ -207,17 +211,11 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
     const publicModels = allImageModels.filter(m => m.status === 'public' && !m.removed && !m.deprecated);
     const withTitle = publicModels.filter(m => m.title && m.title.length > 0);
     const withPricing = withTitle.filter(m => m.pricingInfoOverride && m.pricingInfoOverride.length > 0);
-    console.log(`[FalFilter] image: total=${allModels.length}, category=${allImageModels.length}, public=${publicModels.length}, withTitle=${withTitle.length}, withPricing=${withPricing.length}, filtered=${filtered.length}`);
 
     const falModelMap = new Map<string, FalModel>(filtered.map(m => [m.id, m]));
 
     const imageModels: ImageModel[] = filtered.map(item => {
       const priceData = parseFalPrice(item.pricingInfoOverride, 'image');
-      if (item.id === 'fal-ai/gpt-image-1.5') {
-        console.log(`[FalDebug] FULL PRICING: "${item.pricingInfoOverride}"`);
-        console.log(`[FalDebug] parsed=${JSON.stringify(priceData)}`);
-        console.log(`[FalDebug] has1024=${item.pricingInfoOverride?.includes('1024x1024')}`);
-      }
       const arena = findArenaScore(item.title || item.id, arenaMap);
 
       // Derive popularity from Arena score when available (score >= 1200 yields > 0)
