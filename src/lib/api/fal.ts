@@ -172,7 +172,8 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
         m.category === 'text-to-image' &&
         m.status === 'public' &&
         !m.removed &&
-        !m.deprecated
+        !m.deprecated &&
+        m.title && m.title.length > 0
     );
 
     const falModelMap = new Map<string, FalModel>(filtered.map(m => [m.id, m]));
@@ -196,6 +197,7 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
         pricing: {
           perImage: priceData.perImage,
         },
+        qualityScore: arena?.score,
         tags: item.licenseType === 'commercial' ? ['commercial'] : ['open-source'],
         popularity,
         updatedAt: item.publishedAt || new Date().toISOString(),
@@ -229,7 +231,8 @@ export async function fetchFalVideoModels(): Promise<VideoModel[]> {
         m.category === 'text-to-video' &&
         m.status === 'public' &&
         !m.removed &&
-        !m.deprecated
+        !m.deprecated &&
+        m.title && m.title.length > 0
     );
 
     const falModelMap = new Map<string, FalModel>(filtered.map(m => [m.id, m]));
@@ -254,6 +257,7 @@ export async function fetchFalVideoModels(): Promise<VideoModel[]> {
           perSecond: priceData.perSecond,
           perVideo: priceData.perVideo,
         },
+        qualityScore: arena?.score,
         tags: item.licenseType === 'commercial' ? ['commercial'] : ['open-source'],
         popularity,
         updatedAt: item.publishedAt || new Date().toISOString(),
@@ -292,7 +296,8 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
         AUDIO_CATEGORIES.has(m.category) &&
         m.status === 'public' &&
         !m.removed &&
-        !m.deprecated
+        !m.deprecated &&
+        m.title && m.title.length > 0
     );
 
     const falModelMap = new Map<string, FalModel>(filtered.map(m => [m.id, m]));
