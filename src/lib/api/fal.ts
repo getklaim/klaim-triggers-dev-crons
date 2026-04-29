@@ -211,8 +211,10 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
 
     const imageModels: ImageModel[] = filtered.map(item => {
       const priceData = parseFalPrice(item.pricingInfoOverride, 'image');
-      if (item.title.includes('GPT') || item.title.includes('gpt') || item.title.includes('Qwen')) {
-        console.log(`[FalDebug] ${item.id} "${item.title}": parsed=${JSON.stringify(priceData)} raw="${item.pricingInfoOverride?.substring(0, 200)}"`);
+      if (item.id === 'fal-ai/gpt-image-1.5') {
+        console.log(`[FalDebug] FULL PRICING: "${item.pricingInfoOverride}"`);
+        console.log(`[FalDebug] parsed=${JSON.stringify(priceData)}`);
+        console.log(`[FalDebug] has1024=${item.pricingInfoOverride?.includes('1024x1024')}`);
       }
       const arena = findArenaScore(item.title || item.id, arenaMap);
 
