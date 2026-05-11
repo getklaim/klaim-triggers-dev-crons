@@ -25,7 +25,8 @@ model AiModel {
   // Common fields
   tags       String[] @default([])
   popularity Int      @default(0)
-  runCount   Int?     @map("run_count")
+  runCount        Int?     @map("run_count")
+  providerCountry String?  @map("provider_country")
 
   // Text model specific (nullable for other types)
   contextLength Int? @map("context_length")

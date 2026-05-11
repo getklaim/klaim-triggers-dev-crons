@@ -4,6 +4,35 @@ import { fetchFalImageModels, fetchFalVideoModels, fetchFalAudioModels } from ".
 import { getBenchmark } from "../lib/data/benchmarks.js";
 import { getExternalAudioModels } from "../lib/data/external-audio.js";
 
+const PROVIDER_COUNTRY: Record<string, string> = {
+  // USA
+  anthropic: "USA", "~anthropic": "USA", openai: "USA", "~openai": "USA",
+  google: "USA", "~google": "USA", "meta-llama": "USA", "x-ai": "USA",
+  nvidia: "USA", microsoft: "USA", amazon: "USA", inflection: "USA",
+  perplexity: "USA", nousresearch: "USA", writer: "USA", "ibm-granite": "USA",
+  allenai: "USA", "arcee-ai": "USA", "prime-intellect": "USA", liquid: "USA",
+  essentialai: "USA", morph: "USA", relace: "USA", switchpoint: "USA",
+  sao10k: "USA", alpindale: "USA", alfredpros: "USA", "anthracite-org": "USA",
+  gryphe: "USA", mancer: "USA", thedrummer: "USA", undi95: "USA",
+  // China
+  deepseek: "China", qwen: "China", alibaba: "China", "z-ai": "China",
+  minimax: "China", moonshotai: "China", "~moonshotai": "China", baidu: "China",
+  bytedance: "China", "bytedance-seed": "China", tencent: "China", stepfun: "China",
+  xiaomi: "China", kwaipilot: "China", "nex-agi": "China", inclusionai: "China",
+  // Others
+  cohere: "Canada", mistralai: "France", deepcogito: "France",
+  ai21: "Israel", "aion-labs": "Israel", upstage: "South Korea",
+  rekaai: "UK", inception: "UAE", tngtech: "Germany",
+  // FAL.ai / Replicate providers
+  "black-forest-labs": "Germany", "stability-ai": "UK", midjourney: "USA",
+  "runway": "USA", "pika-labs": "USA", "luma": "USA", "kling": "China",
+  "minimax-ai": "China", "hailuo": "China",
+};
+
+function getProviderCountry(provider: string): string | null {
+  return PROVIDER_COUNTRY[provider.toLowerCase()] ?? null;
+}
+
 interface TextModel {
   id: string;
   name: string;
@@ -188,6 +217,7 @@ async function saveTextModels(models: TextModel[]) {
         contextLength: model.contextLength,
         tags: model.tags,
         popularity: model.popularity,
+        providerCountry: getProviderCountry(model.provider),
         mmlu: benchmark?.mmlu,
         gpqa: benchmark?.gpqa,
         humanEval: benchmark?.humanEval,
@@ -207,6 +237,7 @@ async function saveTextModels(models: TextModel[]) {
         contextLength: model.contextLength,
         tags: model.tags,
         popularity: model.popularity,
+        providerCountry: getProviderCountry(model.provider),
         mmlu: benchmark?.mmlu,
         gpqa: benchmark?.gpqa,
         humanEval: benchmark?.humanEval,
@@ -253,6 +284,7 @@ async function saveImageModels(models: ImageModel[]) {
         runCount: model.runCount,
         tags: model.tags,
         popularity: model.popularity,
+        providerCountry: getProviderCountry(model.provider),
       },
       create: {
         modelId: model.id,
@@ -270,6 +302,7 @@ async function saveImageModels(models: ImageModel[]) {
         runCount: model.runCount,
         tags: model.tags,
         popularity: model.popularity,
+        providerCountry: getProviderCountry(model.provider),
       },
     });
 
@@ -306,6 +339,7 @@ async function saveVideoModels(models: VideoModel[]) {
         runCount: model.runCount,
         tags: model.tags,
         popularity: model.popularity,
+        providerCountry: getProviderCountry(model.provider),
       },
       create: {
         modelId: model.id,
@@ -323,6 +357,7 @@ async function saveVideoModels(models: VideoModel[]) {
         runCount: model.runCount,
         tags: model.tags,
         popularity: model.popularity,
+        providerCountry: getProviderCountry(model.provider),
       },
     });
 
@@ -362,6 +397,7 @@ async function saveAudioModels(models: AudioModel[]) {
         runCount: model.runCount,
         tags: model.tags,
         popularity: model.popularity,
+        providerCountry: getProviderCountry(model.provider),
       },
       create: {
         modelId: model.id,
@@ -379,6 +415,7 @@ async function saveAudioModels(models: AudioModel[]) {
         runCount: model.runCount,
         tags: model.tags,
         popularity: model.popularity,
+        providerCountry: getProviderCountry(model.provider),
       },
     });
 
