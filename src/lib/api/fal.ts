@@ -1,5 +1,6 @@
 import type { ImageModel, VideoModel, AudioModel } from '../types/models.js';
 import { fetchArenaScores, findArenaScore } from './arena.js';
+import { fetchLiteLLMPricing, findLiteLLMPrice } from './litellm.js';
 
 interface FalModel {
   id: string;
@@ -129,6 +130,30 @@ function parseFalPrice(
   }
 
   if (type === 'video') {
+    // Pattern: "$0.1/s" or "$0.10/sec"
+    const slashSecond = pricingText.match(/\$([0-9]+\.?[0-9]*)\s*\/\s*s(?:ec(?:ond)?)?/i);
+    if (slashSecond) {
+      const price = parseFloat(slashSecond[1]);
+      if (price > 0) return { perSecond: price };
+    }
+
+    // Pattern: "charged $0.07" near second-based wording
+    const chargedPlain = pricingText.match(/charged\s+\$([0-9]+\.?[0-9]*)/i);
+    if (
+      chargedPlain &&
+      /second|\/s\b|every second|video you generated/i.test(pricingText)
+    ) {
+      const price = parseFloat(chargedPlain[1]);
+      if (price > 0) return { perSecond: price };
+    }
+
+    // Pattern: "$0.07 (audio off) or $0.14 (audio on)" after second-based wording.
+    const secondContextPrice = pricingText.match(/second[^$]*\$([0-9]+\.?[0-9]*)/i);
+    if (secondContextPrice) {
+      const price = parseFloat(secondContextPrice[1]);
+      if (price > 0) return { perSecond: price };
+    }
+
     // Pattern: "**$X.XX/second**" or "**$X.XX** per second"
     const perSecondBold = pricingText.match(/\*\*\$([0-9]+\.?[0-9]*)\/second\*\*|\*\*\$([0-9]+\.?[0-9]*)\*\*[^*]*per\s+second/i);
     if (perSecondBold) {
@@ -174,6 +199,27 @@ function parseFalPrice(
   }
 
   if (type === 'audio') {
+    // Pattern: "$0.18/1K characters" or "$0.18 per 1K characters"
+    const perThousandChars = pricingText.match(/\$([0-9]+\.?[0-9]*)\s*(?:\/|per)\s*(?:1k|1,000|1000)\s*(?:characters|chars)/i);
+    if (perThousandChars) {
+      const price = parseFloat(perThousandChars[1]);
+      if (price > 0) return { perCharacter: price / 1000 };
+    }
+
+    // Pattern: "$0.00018/character" or "$0.00018 per character"
+    const perCharacterPlain = pricingText.match(/\$([0-9]+\.?[0-9]*)\s*(?:\/|per)\s*(?:character|char)/i);
+    if (perCharacterPlain) {
+      const price = parseFloat(perCharacterPlain[1]);
+      if (price > 0) return { perCharacter: price };
+    }
+
+    // Pattern: "$0.00006/second" or "$0.00006/s"
+    const slashSecond = pricingText.match(/\$([0-9]+\.?[0-9]*)\s*\/\s*s(?:ec(?:ond)?)?/i);
+    if (slashSecond) {
+      const price = parseFloat(slashSecond[1]);
+      if (price > 0) return { perSecond: price };
+    }
+
     // Check for per-second pricing
     const perSecondPattern = /\*\*\$([0-9]+\.?[0-9]*)\/second\*\*|\*\*\$([0-9]+\.?[0-9]*)\*\*[^*]*per\s+second/i;
     const perSecondMatch = pricingText.match(perSecondPattern);
@@ -226,9 +272,10 @@ function deduplicateByFamily<T extends { id: string }>(
 
 export async function fetchFalImageModels(): Promise<ImageModel[]> {
   try {
-    const [allModels, arenaMap] = await Promise.all([
+    const [allModels, arenaMap, litellmMap] = await Promise.all([
       fetchAllFalModels(),
       fetchArenaScores('text-to-image'),
+      fetchLiteLLMPricing(),
     ]);
 
     const filtered = allModels.filter(
@@ -251,6 +298,15 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
       const priceData = parseFalPrice(item.pricingInfoOverride, 'image');
       const arena = findArenaScore(item.title || item.id, arenaMap);
 
+      // Use LiteLLM as fallback when FAL.ai pricing is missing
+      let perImage = priceData.perImage;
+      if (perImage === undefined) {
+        const litellm = findLiteLLMPrice(item.id, litellmMap, item.title);
+        if (litellm?.perImage !== undefined) {
+          perImage = litellm.perImage;
+        }
+      }
+
       // Derive popularity from Arena score when available (score >= 1200 yields > 0)
       let popularity = 0;
       if (arena !== null && arena.score >= 1200) {
@@ -264,7 +320,7 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
         description: item.shortDescription || '',
         category: 'image' as const,
         pricing: {
-          perImage: priceData.perImage,
+          perImage,
         },
         qualityScore: arena?.score,
         tags: item.licenseType === 'commercial' ? ['commercial'] : ['open-source'],
@@ -290,9 +346,10 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
 
 export async function fetchFalVideoModels(): Promise<VideoModel[]> {
   try {
-    const [allModels, arenaMap] = await Promise.all([
+    const [allModels, arenaMap, litellmMap] = await Promise.all([
       fetchAllFalModels(),
       fetchArenaScores('text-to-video'),
+      fetchLiteLLMPricing(),
     ]);
 
     const filtered = allModels.filter(
@@ -310,6 +367,15 @@ export async function fetchFalVideoModels(): Promise<VideoModel[]> {
       const priceData = parseFalPrice(item.pricingInfoOverride, 'video');
       const arena = findArenaScore(item.title || item.id, arenaMap);
 
+      // Use LiteLLM as fallback when FAL.ai pricing is missing
+      let perSecond = priceData.perSecond;
+      if (perSecond === undefined && priceData.perVideo === undefined) {
+        const litellm = findLiteLLMPrice(item.id, litellmMap, item.title);
+        if (litellm?.perSecond !== undefined) {
+          perSecond = litellm.perSecond;
+        }
+      }
+
       // Derive popularity from Arena score when available (score >= 1200 yields > 0)
       let popularity = 0;
       if (arena !== null && arena.score >= 1200) {
@@ -323,7 +389,7 @@ export async function fetchFalVideoModels(): Promise<VideoModel[]> {
         description: item.shortDescription || '',
         category: 'video' as const,
         pricing: {
-          perSecond: priceData.perSecond,
+          perSecond,
           perVideo: priceData.perVideo,
         },
         qualityScore: arena?.score,
@@ -356,7 +422,10 @@ const AUDIO_CATEGORY_TO_TYPE: Record<string, string> = {
 
 export async function fetchFalAudioModels(): Promise<AudioModel[]> {
   try {
-    const allModels = await fetchAllFalModels();
+    const [allModels, litellmMap] = await Promise.all([
+      fetchAllFalModels(),
+      fetchLiteLLMPricing(),
+    ]);
 
     const AUDIO_CATEGORIES = new Set(['text-to-speech', 'speech-to-text', 'text-to-audio']);
 
@@ -374,6 +443,9 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
     const audioModels: AudioModel[] = filtered.map(item => {
       const priceData = parseFalPrice(item.pricingInfoOverride, 'audio');
       const audioType = AUDIO_CATEGORY_TO_TYPE[item.category] || 'tts';
+      const litellm = findLiteLLMPrice(item.id, litellmMap, item.title);
+      const perSecond = priceData.perSecond ?? litellm?.perSecond;
+      const perCharacter = priceData.perCharacter ?? litellm?.perCharacter;
 
       return {
         id: item.id,
@@ -383,8 +455,8 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
         category: 'audio' as const,
         type: audioType,
         pricing: {
-          perSecond: priceData.perSecond,
-          perCharacter: priceData.perCharacter,
+          perSecond,
+          perCharacter,
         },
         tags: item.licenseType === 'commercial' ? ['commercial'] : ['open-source'],
         popularity: 0,
