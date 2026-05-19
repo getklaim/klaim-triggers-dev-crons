@@ -343,6 +343,7 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
         type: audioType,
         pricing: {
           perSecond: resolvedPrice.pricing.perSecond,
+          perMinute: resolvedPrice.pricing.perMinute,
           perCharacter: resolvedPrice.pricing.perCharacter,
           perOutput: resolvedPrice.pricing.perOutput,
         },

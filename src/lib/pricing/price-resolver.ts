@@ -8,6 +8,7 @@ export interface ParsedPrice {
   perImage?: number;
   perMegapixel?: number;
   perSecond?: number;
+  perMinute?: number;
   perVideo?: number;
   perCharacter?: number;
   perOutput?: number;
@@ -36,24 +37,35 @@ function parseNumber(value: string | undefined): number | undefined {
   return price > 0 ? price : undefined;
 }
 
+function normalizePriceText(text: string): string {
+  return text
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&quot;/g, "\"")
+    .replace(/&amp;/g, "&")
+    .replace(/&#x27;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function parsePriceText(
   pricingText: string | undefined,
   type: PriceType
 ): ParsedPrice {
   if (!pricingText) return {};
 
-  const boldPricePattern = /\*\*\$([0-9]+\.?[0-9]*)\*\*/g;
-  const matches = [...pricingText.matchAll(boldPricePattern)];
+  const text = normalizePriceText(pricingText);
+  const boldPricePattern = /\*\*\$?\s*([0-9]+\.?[0-9]*)\*\*/g;
+  const matches = [...text.matchAll(boldPricePattern)];
 
   if (type === "image") {
-    if (pricingText.includes("per 1M") && pricingText.includes("Image tokens")) {
+    if (text.includes("per 1M") && text.includes("Image tokens")) {
       return { perImage: 0.07 };
     }
 
-    const perImageBold = pricingText.match(/\*\*\$([0-9]+\.?[0-9]*)\*\*[^.]*per image/i);
-    const perImagePlain = pricingText.match(/\$([0-9]+\.?[0-9]*)\s+per\s+image/i);
-    const reverseDollar = pricingText.match(/\*\*([0-9]+\.?[0-9]*)\$\*\*/);
-    const perOutputImage = pricingText.match(/\$([0-9]+\.?[0-9]*)\s+for\s+1024x1024/i);
+    const perImageBold = text.match(/\*\*\$\s*([0-9]+\.?[0-9]*)\*\*[^.]*per image/i);
+    const perImagePlain = text.match(/\$\s*([0-9]+\.?[0-9]*)\s+per\s+image/i);
+    const reverseDollar = text.match(/\*\*([0-9]+\.?[0-9]*)\$\*\*/);
+    const perOutputImage = text.match(/\$([0-9]+\.?[0-9]*)\s+for\s+1024x1024/i);
     const price =
       parseNumber(perImageBold?.[1]) ??
       parseNumber(perImagePlain?.[1]) ??
@@ -62,11 +74,11 @@ export function parsePriceText(
 
     if (price !== undefined) return { perImage: price };
 
-    const perMegapixel = pricingText.match(/\$?([0-9]+\.?[0-9]*)\s+per\s+megapixel/i);
+    const perMegapixel = text.match(/\$?\s*([0-9]+\.?[0-9]*)\s+per\s+megapixel/i);
     const megapixelPrice = parseNumber(perMegapixel?.[1]);
     if (megapixelPrice !== undefined) return { perMegapixel: megapixelPrice };
 
-    if (matches.length > 0 && !pricingText.includes("per 1M") && !pricingText.includes("tokens")) {
+    if (matches.length > 0 && !text.includes("per 1M") && !text.includes("tokens")) {
       const fallback = parseNumber(matches[0][1]);
       if (fallback !== undefined && fallback < 1) return { perImage: fallback };
     }
@@ -74,16 +86,16 @@ export function parsePriceText(
   }
 
   if (type === "video") {
-    const slashSecond = pricingText.match(/\$([0-9]+\.?[0-9]*)\s*\/\s*s(?:ec(?:ond)?)?/i);
-    const chargedPlain = pricingText.match(/charged\s+\$([0-9]+\.?[0-9]*)/i);
-    const secondContextPrice = pricingText.match(/second[^$]*\$([0-9]+\.?[0-9]*)/i);
-    const perSecondBold = pricingText.match(/\*\*\$([0-9]+\.?[0-9]*)\/second\*\*|\*\*\$([0-9]+\.?[0-9]*)\*\*[^*]*per\s+second/i);
-    const perSecondPlain = pricingText.match(/\$([0-9]+\.?[0-9]*)\s+per\s+second/i);
-    const reverseDollarSec = pricingText.match(/([0-9]+\.?[0-9]*)\s*\$\s*per\s+(?:video\s+)?second/i);
+    const slashSecond = text.match(/\$\s*([0-9]+\.?[0-9]*)\s*\/\s*s(?:ec(?:ond)?)?/i);
+    const chargedPlain = text.match(/charged\s+\$\s*([0-9]+\.?[0-9]*)/i);
+    const secondContextPrice = text.match(/second[^$]*\$\s*([0-9]+\.?[0-9]*)/i);
+    const perSecondBold = text.match(/\*\*\$\s*([0-9]+\.?[0-9]*)\/second\*\*|\*\*\$\s*([0-9]+\.?[0-9]*)\*\*[^*]*per\s+second/i);
+    const perSecondPlain = text.match(/\$\s*([0-9]+\.?[0-9]*)\s+per\s+second/i);
+    const reverseDollarSec = text.match(/([0-9]+\.?[0-9]*)\s*\$\s*per\s+(?:video\s+)?second/i);
 
     const perSecond =
       parseNumber(slashSecond?.[1]) ??
-      (/second|\/s\b|every second|video you generated/i.test(pricingText)
+      (/second|\/s\b|every second|video you generated/i.test(text)
         ? parseNumber(chargedPlain?.[1])
         : undefined) ??
       parseNumber(secondContextPrice?.[1]) ??
@@ -93,37 +105,43 @@ export function parsePriceText(
 
     if (perSecond !== undefined) return { perSecond };
 
-    const reverseDollarVideo = pricingText.match(/([0-9]+\.?[0-9]*)\s*\$\s*for\s+every/i);
+    const reverseDollarVideo = text.match(/([0-9]+\.?[0-9]*)\s*\$\s*for\s+every/i);
     const perVideo = parseNumber(reverseDollarVideo?.[1]) ?? parseNumber(matches[0]?.[1]);
     return perVideo !== undefined ? { perVideo } : {};
   }
 
-  const perThousandChars = pricingText.match(/\$([0-9]+\.?[0-9]*)\s*(?:\/|per)\s*(?:1k|1,000|1000)\s*(?:characters|chars)/i);
+  const perThousandChars = text.match(/\$\s*([0-9]+\.?[0-9]*)\s*(?:\/|per)\s*(?:1k|1,000|1000)\s*(?:characters?|chars?)/i);
   if (perThousandChars) {
     const price = parseNumber(perThousandChars[1]);
     if (price !== undefined) return { perCharacter: price / 1000 };
   }
 
-  const perCharacterPlain = pricingText.match(/\$([0-9]+\.?[0-9]*)\s*(?:\/|per)\s*(?:character|char)/i);
+  const perCharacterPlain = text.match(/\$\s*([0-9]+\.?[0-9]*)\s*(?:\/|per)\s*(?:characters?|chars?)/i);
   if (perCharacterPlain) {
     const price = parseNumber(perCharacterPlain[1]);
     if (price !== undefined) return { perCharacter: price };
   }
 
-  const perGeneration = pricingText.match(/\$([0-9]+\.?[0-9]*)\s*(?:\/|per)\s*(?:generation|output)/i);
+  const perGeneration = text.match(/\$\s*([0-9]+\.?[0-9]*)\s*(?:\/|per)\s*(?:generation|output|audio)\b/i);
   if (perGeneration) {
     const price = parseNumber(perGeneration[1]);
     if (price !== undefined) return { perOutput: price };
   }
 
-  const slashSecond = pricingText.match(/\$([0-9]+\.?[0-9]*)\s*\/\s*s(?:ec(?:ond)?)?/i);
-  const perSecondPattern = pricingText.match(/\*\*\$([0-9]+\.?[0-9]*)\/second\*\*|\*\*\$([0-9]+\.?[0-9]*)\*\*[^*]*per\s+second|\$([0-9]+\.?[0-9]*)\s+per\s+second/i);
+  const perMinutePattern = text.match(/\$\s*([0-9]+\.?[0-9]*)\s*(?:\/|per)\s+minutes?\b/i);
+  const perMinute = parseNumber(perMinutePattern?.[1]);
+  if (perMinute !== undefined) return { perMinute };
+
+  const slashSecond = text.match(/\$\s*([0-9]+\.?[0-9]*)\s*\/\s*s(?:ec(?:ond)?)?/i);
+  const perGeneratedAudioSecond = text.match(/\$?\s*([0-9]+\.?[0-9]*)\s+per\s+generated\s+audio\s+seconds?/i);
+  const perSecondPattern = text.match(/\*\*\$\s*([0-9]+\.?[0-9]*)\/second\*\*|\*\*\$\s*([0-9]+\.?[0-9]*)\*\*[^*]*per\s+(?:audio\s+)?seconds?|\$\s*([0-9]+\.?[0-9]*)\s+per\s+(?:compute\s+|audio\s+)?seconds?/i);
   const perSecond =
     parseNumber(slashSecond?.[1]) ??
+    parseNumber(perGeneratedAudioSecond?.[1]) ??
     parseNumber(perSecondPattern?.[1] || perSecondPattern?.[2] || perSecondPattern?.[3]);
   if (perSecond !== undefined) return { perSecond };
 
-  const perCharBold = pricingText.match(/\*\*\$([0-9]+\.?[0-9]*)\*\*[^*]*per\s+character|\*\*\$([0-9]+\.?[0-9]*)\/char/i);
+  const perCharBold = text.match(/\*\*\$\s*([0-9]+\.?[0-9]*)\*\*[^*]*per\s+characters?|\*\*\$\s*([0-9]+\.?[0-9]*)\/char/i);
   const perCharacter = parseNumber(perCharBold?.[1] || perCharBold?.[2]);
   if (perCharacter !== undefined) return { perCharacter };
 
