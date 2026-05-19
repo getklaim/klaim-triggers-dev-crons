@@ -64,6 +64,7 @@ export interface TextModelPricing {
 
 export interface ImageModelPricing {
   pricePerImage: number;
+  pricePerMegapixel?: number;
   pricePerSecond?: number;
 }
 
@@ -127,6 +128,7 @@ export interface ImageModel {
   category: 'image';
   pricing: {
     perImage?: number;
+    perMegapixel?: number;
     perSecond?: number;
   };
   supportedSizes?: string[];

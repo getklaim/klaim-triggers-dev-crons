@@ -91,7 +91,8 @@ model AiPrice {
   outputPrice Float? @map("output_price")
 
   // Image model pricing
-  pricePerImage Float? @map("price_per_image")
+  pricePerImage     Float? @map("price_per_image")
+  pricePerMegapixel Float? @map("price_per_megapixel")
 
   // Video model pricing
   pricePerSecond Float? @map("price_per_second")

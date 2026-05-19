@@ -6,6 +6,7 @@ export type PriceSource = "fal-api" | "fal-page" | "litellm" | "override" | "non
 
 export interface ParsedPrice {
   perImage?: number;
+  perMegapixel?: number;
   perSecond?: number;
   perVideo?: number;
   perCharacter?: number;
@@ -53,16 +54,17 @@ export function parsePriceText(
     const perImagePlain = pricingText.match(/\$([0-9]+\.?[0-9]*)\s+per\s+image/i);
     const reverseDollar = pricingText.match(/\*\*([0-9]+\.?[0-9]*)\$\*\*/);
     const perOutputImage = pricingText.match(/\$([0-9]+\.?[0-9]*)\s+for\s+1024x1024/i);
-    const perMegapixel = pricingText.match(/\$?([0-9]+\.?[0-9]*)\s+per\s+megapixel/i);
-
     const price =
       parseNumber(perImageBold?.[1]) ??
       parseNumber(perImagePlain?.[1]) ??
       parseNumber(reverseDollar?.[1]) ??
-      parseNumber(perOutputImage?.[1]) ??
-      parseNumber(perMegapixel?.[1]);
+      parseNumber(perOutputImage?.[1]);
 
     if (price !== undefined) return { perImage: price };
+
+    const perMegapixel = pricingText.match(/\$?([0-9]+\.?[0-9]*)\s+per\s+megapixel/i);
+    const megapixelPrice = parseNumber(perMegapixel?.[1]);
+    if (megapixelPrice !== undefined) return { perMegapixel: megapixelPrice };
 
     if (matches.length > 0 && !pricingText.includes("per 1M") && !pricingText.includes("tokens")) {
       const fallback = parseNumber(matches[0][1]);

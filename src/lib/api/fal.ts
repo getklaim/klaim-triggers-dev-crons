@@ -162,6 +162,7 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
         category: 'image' as const,
         pricing: {
           perImage: resolvedPrice.pricing.perImage,
+          perMegapixel: resolvedPrice.pricing.perMegapixel,
           perSecond: resolvedPrice.pricing.perSecond,
         },
         qualityScore: arena?.score,

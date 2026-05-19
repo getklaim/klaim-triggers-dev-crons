@@ -51,7 +51,7 @@ interface ImageModel {
   name: string;
   provider: string;
   description: string;
-  pricing: { perImage?: number; perSecond?: number };
+  pricing: { perImage?: number; perMegapixel?: number; perSecond?: number };
   supportedSizes?: string[];
   style?: string[];
   qualityScore?: number;
@@ -309,13 +309,15 @@ async function saveImageModels(models: ImageModel[]) {
     await prisma.aiPrice.upsert({
       where: { modelId: savedModel.id },
       update: {
-        pricePerImage: model.pricing.perImage,
-        pricePerSecond: model.pricing.perSecond,
+        pricePerImage: model.pricing.perImage ?? null,
+        pricePerMegapixel: model.pricing.perMegapixel ?? null,
+        pricePerSecond: model.pricing.perSecond ?? null,
       },
       create: {
         modelId: savedModel.id,
-        pricePerImage: model.pricing.perImage,
-        pricePerSecond: model.pricing.perSecond,
+        pricePerImage: model.pricing.perImage ?? null,
+        pricePerMegapixel: model.pricing.perMegapixel ?? null,
+        pricePerSecond: model.pricing.perSecond ?? null,
       },
     });
   }
