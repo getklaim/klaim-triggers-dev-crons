@@ -1,6 +1,7 @@
 import type { ImageModel, VideoModel, AudioModel } from '../types/models.js';
 import { fetchArenaScores, findArenaScore } from './arena.js';
-import { fetchLiteLLMPricing, findLiteLLMPrice } from './litellm.js';
+import { fetchLiteLLMPricing } from './litellm.js';
+import { logPriceCoverage, resolveModelPrice, type PriceSource } from '../pricing/price-resolver.js';
 
 interface FalModel {
   id: string;
@@ -28,18 +29,41 @@ interface FalApiResponse {
 
 const FAL_API_BASE = 'https://fal.ai/api/models';
 const PAGE_SIZE = 40;
+let allFalModelsPromise: Promise<FalModel[]> | null = null;
+
+async function fetchFalModelsPage(page: number): Promise<FalApiResponse | null> {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(`${FAL_API_BASE}?page=${page}&size=${PAGE_SIZE}`);
+      if (response.ok) {
+        return (await response.json()) as FalApiResponse;
+      }
+    } catch {
+      // Retry below.
+    }
+
+    await new Promise(resolve => setTimeout(resolve, attempt * 250));
+  }
+
+  return null;
+}
 
 async function fetchAllFalModels(): Promise<FalModel[]> {
+  if (allFalModelsPromise) return allFalModelsPromise;
+  allFalModelsPromise = fetchAllFalModelsUncached();
+  return allFalModelsPromise;
+}
+
+async function fetchAllFalModelsUncached(): Promise<FalModel[]> {
   const allModels: FalModel[] = [];
 
   try {
     // Fetch first page to get total page count
-    const firstResponse = await fetch(`${FAL_API_BASE}?page=1&size=${PAGE_SIZE}`);
-    if (!firstResponse.ok) {
-      throw new Error(`FAL API error: ${firstResponse.status}`);
+    const firstData = await fetchFalModelsPage(1);
+    if (!firstData) {
+      throw new Error("FAL API error: failed to fetch first page");
     }
 
-    const firstData = (await firstResponse.json()) as FalApiResponse;
     allModels.push(...firstData.items);
 
     const totalPages = firstData.pages;
@@ -51,15 +75,10 @@ async function fetchAllFalModels(): Promise<FalModel[]> {
     const BATCH_SIZE = 10;
     for (let i = 0; i < remainingPages.length; i += BATCH_SIZE) {
       const batch = remainingPages.slice(i, i + BATCH_SIZE);
-      const responses = await Promise.all(
-        batch.map(page => fetch(`${FAL_API_BASE}?page=${page}&size=${PAGE_SIZE}`))
-      );
+      const pages = await Promise.all(batch.map(page => fetchFalModelsPage(page)));
 
-      for (const response of responses) {
-        if (response.ok) {
-          const data = (await response.json()) as FalApiResponse;
-          allModels.push(...data.items);
-        }
+      for (const data of pages) {
+        if (data) allModels.push(...data.items);
       }
     }
   } catch (error) {
@@ -68,183 +87,6 @@ async function fetchAllFalModels(): Promise<FalModel[]> {
   }
 
   return allModels;
-}
-
-function parseFalPrice(
-  pricingText: string | undefined,
-  type: 'image' | 'video' | 'audio'
-): { perImage?: number; perSecond?: number; perVideo?: number; perCharacter?: number } {
-  if (!pricingText) return {};
-
-  // Extract all bold dollar amounts: **$X.XX**
-  const boldPricePattern = /\*\*\$([0-9]+\.?[0-9]*)\*\*/g;
-  const matches = [...pricingText.matchAll(boldPricePattern)];
-
-  if (type === 'image') {
-    // Token-based models: estimate per-image price (medium quality 1024x1024)
-    if (pricingText.includes('per 1M') && pricingText.includes('Image tokens')) {
-      return { perImage: 0.07 };
-    }
-
-    // Pattern: "**$X.XX** per image"
-    const perImageBold = pricingText.match(/\*\*\$([0-9]+\.?[0-9]*)\*\*[^.]*per image/i);
-    if (perImageBold) {
-      const price = parseFloat(perImageBold[1]);
-      if (price > 0) return { perImage: price };
-    }
-
-    // Pattern: "$X.XX per image" (without bold)
-    const perImagePlain = pricingText.match(/\$([0-9]+\.?[0-9]*)\s+per\s+image/i);
-    if (perImagePlain) {
-      const price = parseFloat(perImagePlain[1]);
-      if (price > 0) return { perImage: price };
-    }
-
-    // Pattern: "**X.XX$**" (dollar sign after number)
-    const reverseDollar = pricingText.match(/\*\*([0-9]+\.?[0-9]*)\$\*\*/);
-    if (reverseDollar) {
-      const price = parseFloat(reverseDollar[1]);
-      if (price > 0) return { perImage: price };
-    }
-
-    // Pattern: "$X.XX for 1024x1024" (GPT-Image style)
-    const perOutputImage = pricingText.match(/\$([0-9]+\.?[0-9]*)\s+for\s+1024x1024/i);
-    if (perOutputImage) {
-      const price = parseFloat(perOutputImage[1]);
-      if (price > 0) return { perImage: price };
-    }
-
-    // Pattern: "X.XX per megapixel" (with or without $ sign)
-    const perMegapixel = pricingText.match(/\$?([0-9]+\.?[0-9]*)\s+per\s+megapixel/i);
-    if (perMegapixel) {
-      const price = parseFloat(perMegapixel[1]);
-      if (price > 0) return { perImage: price };
-    }
-
-    // Fallback: first bold price (skip token-based pricing)
-    if (matches.length > 0 && !pricingText.includes('per 1M') && !pricingText.includes('tokens')) {
-      const price = parseFloat(matches[0][1]);
-      if (price > 0 && price < 1) return { perImage: price };
-    }
-    return {};
-  }
-
-  if (type === 'video') {
-    // Pattern: "$0.1/s" or "$0.10/sec"
-    const slashSecond = pricingText.match(/\$([0-9]+\.?[0-9]*)\s*\/\s*s(?:ec(?:ond)?)?/i);
-    if (slashSecond) {
-      const price = parseFloat(slashSecond[1]);
-      if (price > 0) return { perSecond: price };
-    }
-
-    // Pattern: "charged $0.07" near second-based wording
-    const chargedPlain = pricingText.match(/charged\s+\$([0-9]+\.?[0-9]*)/i);
-    if (
-      chargedPlain &&
-      /second|\/s\b|every second|video you generated/i.test(pricingText)
-    ) {
-      const price = parseFloat(chargedPlain[1]);
-      if (price > 0) return { perSecond: price };
-    }
-
-    // Pattern: "$0.07 (audio off) or $0.14 (audio on)" after second-based wording.
-    const secondContextPrice = pricingText.match(/second[^$]*\$([0-9]+\.?[0-9]*)/i);
-    if (secondContextPrice) {
-      const price = parseFloat(secondContextPrice[1]);
-      if (price > 0) return { perSecond: price };
-    }
-
-    // Pattern: "**$X.XX/second**" or "**$X.XX** per second"
-    const perSecondBold = pricingText.match(/\*\*\$([0-9]+\.?[0-9]*)\/second\*\*|\*\*\$([0-9]+\.?[0-9]*)\*\*[^*]*per\s+second/i);
-    if (perSecondBold) {
-      const price = parseFloat(perSecondBold[1] || perSecondBold[2]);
-      if (price > 0) return { perSecond: price };
-    }
-
-    // Pattern: "$X.XX per second" (without bold)
-    const perSecondPlain = pricingText.match(/\$([0-9]+\.?[0-9]*)\s+per\s+second/i);
-    if (perSecondPlain) {
-      const price = parseFloat(perSecondPlain[1]);
-      if (price > 0) return { perSecond: price };
-    }
-
-    // Pattern: "X.XX $ per video second" (dollar after number)
-    const reverseDollarSec = pricingText.match(/([0-9]+\.?[0-9]*)\s*\$\s*per\s+(?:video\s+)?second/i);
-    if (reverseDollarSec) {
-      const price = parseFloat(reverseDollarSec[1]);
-      if (price > 0) return { perSecond: price };
-    }
-
-    // Pattern: "charged **$X.XX**"
-    const chargedPattern = /charged\s+\*\*\$([0-9]+\.?[0-9]*)\*\*/i;
-    const chargedMatch = pricingText.match(chargedPattern);
-    if (chargedMatch) {
-      const price = parseFloat(chargedMatch[1]);
-      if (price > 0) return { perSecond: price };
-    }
-
-    // Pattern: "X.XX $ for every ... video" (per video)
-    const reverseDollarVideo = pricingText.match(/([0-9]+\.?[0-9]*)\s*\$\s*for\s+every/i);
-    if (reverseDollarVideo) {
-      const price = parseFloat(reverseDollarVideo[1]);
-      if (price > 0) return { perVideo: price };
-    }
-
-    // Fallback: first bold price as per-video
-    if (matches.length > 0) {
-      const price = parseFloat(matches[0][1]);
-      if (price > 0) return { perVideo: price };
-    }
-    return {};
-  }
-
-  if (type === 'audio') {
-    // Pattern: "$0.18/1K characters" or "$0.18 per 1K characters"
-    const perThousandChars = pricingText.match(/\$([0-9]+\.?[0-9]*)\s*(?:\/|per)\s*(?:1k|1,000|1000)\s*(?:characters|chars)/i);
-    if (perThousandChars) {
-      const price = parseFloat(perThousandChars[1]);
-      if (price > 0) return { perCharacter: price / 1000 };
-    }
-
-    // Pattern: "$0.00018/character" or "$0.00018 per character"
-    const perCharacterPlain = pricingText.match(/\$([0-9]+\.?[0-9]*)\s*(?:\/|per)\s*(?:character|char)/i);
-    if (perCharacterPlain) {
-      const price = parseFloat(perCharacterPlain[1]);
-      if (price > 0) return { perCharacter: price };
-    }
-
-    // Pattern: "$0.00006/second" or "$0.00006/s"
-    const slashSecond = pricingText.match(/\$([0-9]+\.?[0-9]*)\s*\/\s*s(?:ec(?:ond)?)?/i);
-    if (slashSecond) {
-      const price = parseFloat(slashSecond[1]);
-      if (price > 0) return { perSecond: price };
-    }
-
-    // Check for per-second pricing
-    const perSecondPattern = /\*\*\$([0-9]+\.?[0-9]*)\/second\*\*|\*\*\$([0-9]+\.?[0-9]*)\*\*[^*]*per\s+second/i;
-    const perSecondMatch = pricingText.match(perSecondPattern);
-    if (perSecondMatch) {
-      const price = parseFloat(perSecondMatch[1] || perSecondMatch[2]);
-      if (price > 0) return { perSecond: price };
-    }
-
-    // Check for per-character pricing
-    const perCharPattern = /\*\*\$([0-9]+\.?[0-9]*)\*\*[^*]*per\s+character|\*\*\$([0-9]+\.?[0-9]*)\/char/i;
-    const perCharMatch = pricingText.match(perCharPattern);
-    if (perCharMatch) {
-      const price = parseFloat(perCharMatch[1] || perCharMatch[2]);
-      if (price > 0) return { perCharacter: price };
-    }
-
-    // Fallback: first bold price
-    if (matches.length > 0) {
-      const price = parseFloat(matches[0][1]);
-      if (price > 0) return { perSecond: price };
-    }
-    return {};
-  }
-
-  return {};
 }
 
 function deduplicateByFamily<T extends { id: string }>(
@@ -294,18 +136,17 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
 
     const falModelMap = new Map<string, FalModel>(filtered.map(m => [m.id, m]));
 
-    const imageModels: ImageModel[] = filtered.map(item => {
-      const priceData = parseFalPrice(item.pricingInfoOverride, 'image');
+    const sourceByModelId = new Map<string, PriceSource>();
+    const imageModels: ImageModel[] = await Promise.all(filtered.map(async item => {
+      const resolvedPrice = await resolveModelPrice({
+        id: item.id,
+        title: item.title,
+        type: 'image',
+        pricingInfoOverride: item.pricingInfoOverride,
+        litellmMap,
+      });
+      sourceByModelId.set(item.id, resolvedPrice.source);
       const arena = findArenaScore(item.title || item.id, arenaMap);
-
-      // Use LiteLLM as fallback when FAL.ai pricing is missing
-      let perImage = priceData.perImage;
-      if (perImage === undefined) {
-        const litellm = findLiteLLMPrice(item.id, litellmMap, item.title);
-        if (litellm?.perImage !== undefined) {
-          perImage = litellm.perImage;
-        }
-      }
 
       // Derive popularity from Arena score when available (score >= 1200 yields > 0)
       let popularity = 0;
@@ -320,7 +161,8 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
         description: item.shortDescription || '',
         category: 'image' as const,
         pricing: {
-          perImage,
+          perImage: resolvedPrice.pricing.perImage,
+          perSecond: resolvedPrice.pricing.perSecond,
         },
         qualityScore: arena?.score,
         tags: item.licenseType === 'commercial' ? ['commercial'] : ['open-source'],
@@ -328,7 +170,7 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
         updatedAt: item.publishedAt || new Date().toISOString(),
         runCount: undefined,
       };
-    });
+    }));
 
     const deduplicated = deduplicateByFamily(
       imageModels,
@@ -336,6 +178,7 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
       falModelMap
     );
 
+    logPriceCoverage('image', deduplicated, sourceByModelId);
     console.log(`Fetched ${deduplicated.length} image models from FAL.ai`);
     return deduplicated;
   } catch (error) {
@@ -363,18 +206,17 @@ export async function fetchFalVideoModels(): Promise<VideoModel[]> {
 
     const falModelMap = new Map<string, FalModel>(filtered.map(m => [m.id, m]));
 
-    const videoModels: VideoModel[] = filtered.map(item => {
-      const priceData = parseFalPrice(item.pricingInfoOverride, 'video');
+    const sourceByModelId = new Map<string, PriceSource>();
+    const videoModels: VideoModel[] = await Promise.all(filtered.map(async item => {
+      const resolvedPrice = await resolveModelPrice({
+        id: item.id,
+        title: item.title,
+        type: 'video',
+        pricingInfoOverride: item.pricingInfoOverride,
+        litellmMap,
+      });
+      sourceByModelId.set(item.id, resolvedPrice.source);
       const arena = findArenaScore(item.title || item.id, arenaMap);
-
-      // Use LiteLLM as fallback when FAL.ai pricing is missing
-      let perSecond = priceData.perSecond;
-      if (perSecond === undefined && priceData.perVideo === undefined) {
-        const litellm = findLiteLLMPrice(item.id, litellmMap, item.title);
-        if (litellm?.perSecond !== undefined) {
-          perSecond = litellm.perSecond;
-        }
-      }
 
       // Derive popularity from Arena score when available (score >= 1200 yields > 0)
       let popularity = 0;
@@ -389,8 +231,8 @@ export async function fetchFalVideoModels(): Promise<VideoModel[]> {
         description: item.shortDescription || '',
         category: 'video' as const,
         pricing: {
-          perSecond,
-          perVideo: priceData.perVideo,
+          perSecond: resolvedPrice.pricing.perSecond,
+          perVideo: resolvedPrice.pricing.perVideo,
         },
         qualityScore: arena?.score,
         tags: item.licenseType === 'commercial' ? ['commercial'] : ['open-source'],
@@ -398,7 +240,7 @@ export async function fetchFalVideoModels(): Promise<VideoModel[]> {
         updatedAt: item.publishedAt || new Date().toISOString(),
         runCount: undefined,
       };
-    });
+    }));
 
     const deduplicated = deduplicateByFamily(
       videoModels,
@@ -406,6 +248,7 @@ export async function fetchFalVideoModels(): Promise<VideoModel[]> {
       falModelMap
     );
 
+    logPriceCoverage('video', deduplicated, sourceByModelId);
     console.log(`Fetched ${deduplicated.length} video models from FAL.ai`);
     return deduplicated;
   } catch (error) {
@@ -440,12 +283,17 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
 
     const falModelMap = new Map<string, FalModel>(filtered.map(m => [m.id, m]));
 
-    const audioModels: AudioModel[] = filtered.map(item => {
-      const priceData = parseFalPrice(item.pricingInfoOverride, 'audio');
+    const sourceByModelId = new Map<string, PriceSource>();
+    const audioModels: AudioModel[] = await Promise.all(filtered.map(async item => {
+      const resolvedPrice = await resolveModelPrice({
+        id: item.id,
+        title: item.title,
+        type: 'audio',
+        pricingInfoOverride: item.pricingInfoOverride,
+        litellmMap,
+      });
+      sourceByModelId.set(item.id, resolvedPrice.source);
       const audioType = AUDIO_CATEGORY_TO_TYPE[item.category] || 'tts';
-      const litellm = findLiteLLMPrice(item.id, litellmMap, item.title);
-      const perSecond = priceData.perSecond ?? litellm?.perSecond;
-      const perCharacter = priceData.perCharacter ?? litellm?.perCharacter;
 
       return {
         id: item.id,
@@ -455,15 +303,16 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
         category: 'audio' as const,
         type: audioType,
         pricing: {
-          perSecond,
-          perCharacter,
+          perSecond: resolvedPrice.pricing.perSecond,
+          perCharacter: resolvedPrice.pricing.perCharacter,
+          perOutput: resolvedPrice.pricing.perOutput,
         },
         tags: item.licenseType === 'commercial' ? ['commercial'] : ['open-source'],
         popularity: 0,
         updatedAt: item.publishedAt || new Date().toISOString(),
         runCount: undefined,
       };
-    });
+    }));
 
     const deduplicated = deduplicateByFamily(
       audioModels,
@@ -471,6 +320,7 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
       falModelMap
     );
 
+    logPriceCoverage('audio', deduplicated, sourceByModelId);
     console.log(`Fetched ${deduplicated.length} audio models from FAL.ai`);
     return deduplicated;
   } catch (error) {

@@ -1,4 +1,4 @@
-interface LiteLLMPricing {
+export interface LiteLLMPricing {
   perImage?: number;
   perSecond?: number;
   perCharacter?: number;
