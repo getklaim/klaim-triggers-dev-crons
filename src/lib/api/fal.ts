@@ -262,7 +262,47 @@ const AUDIO_CATEGORY_TO_TYPE: Record<string, string> = {
   'text-to-speech': 'tts',
   'speech-to-text': 'stt',
   'text-to-audio': 'music',
+  'audio-to-audio': 'music',
+  'video-to-audio': 'music',
+  'speech-to-speech': 'tts',
+  'audio-to-text': 'stt',
 };
+
+const AUDIO_CATEGORIES = new Set(Object.keys(AUDIO_CATEGORY_TO_TYPE));
+
+function inferFalAudioType(item: FalModel): string {
+  const searchText = [item.id, item.title, item.shortDescription, item.modelFamily]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  if (/transcri|speech[-\s]?to[-\s]?text|stt|whisper|scribe/.test(searchText)) return 'stt';
+  if (/speech|voice|tts|text[-\s]?to[-\s]?speech|dub|clone/.test(searchText)) return 'tts';
+
+  if (item.category === 'audio-to-text') return 'stt';
+  if (item.category === 'speech-to-text') return 'stt';
+  if (item.category === 'speech-to-speech') return 'tts';
+  if (item.category === 'text-to-speech') return 'tts';
+  if (item.category === 'text-to-audio') return 'music';
+  if (item.category === 'video-to-audio') return 'music';
+
+  return AUDIO_CATEGORY_TO_TYPE[item.category] || 'music';
+}
+
+function getFalAudioTags(item: FalModel): string[] {
+  const tags = [item.licenseType === 'commercial' ? 'commercial' : 'open-source', item.category];
+  const searchText = [item.id, item.title, item.shortDescription, item.modelFamily]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  if (/clone|cloning/.test(searchText)) tags.push('voice-cloning');
+  if (/real[-\s]?time|stream/.test(searchText)) tags.push('realtime');
+  if (/\bmusic\b|\bsong\b|\bvocal\b|\bsing(?:ing)?\b/.test(searchText)) tags.push('music');
+  if (/sound[-\s]?effect|sfx/.test(searchText)) tags.push('sound-effects');
+
+  return Array.from(new Set(tags));
+}
 
 export async function fetchFalAudioModels(): Promise<AudioModel[]> {
   try {
@@ -270,8 +310,6 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
       fetchAllFalModels(),
       fetchLiteLLMPricing(),
     ]);
-
-    const AUDIO_CATEGORIES = new Set(['text-to-speech', 'speech-to-text', 'text-to-audio']);
 
     const filtered = allModels.filter(
       m =>
@@ -294,7 +332,7 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
         litellmMap,
       });
       sourceByModelId.set(item.id, resolvedPrice.source);
-      const audioType = AUDIO_CATEGORY_TO_TYPE[item.category] || 'tts';
+      const audioType = inferFalAudioType(item);
 
       return {
         id: item.id,
@@ -308,7 +346,7 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
           perCharacter: resolvedPrice.pricing.perCharacter,
           perOutput: resolvedPrice.pricing.perOutput,
         },
-        tags: item.licenseType === 'commercial' ? ['commercial'] : ['open-source'],
+        tags: getFalAudioTags(item),
         popularity: 0,
         updatedAt: item.publishedAt || new Date().toISOString(),
         runCount: undefined,
@@ -317,7 +355,7 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
 
     const deduplicated = deduplicateByFamily(
       audioModels,
-      m => m.modelFamily || m.title || m.id,
+      m => `${m.category}:${m.modelFamily || m.title || m.id}`,
       falModelMap
     );
 

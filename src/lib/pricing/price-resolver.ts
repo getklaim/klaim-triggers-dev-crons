@@ -27,7 +27,7 @@ interface ResolvePriceInput {
 }
 
 function hasPrice(pricing: ParsedPrice): boolean {
-  return Object.values(pricing).some(value => value !== undefined && value !== null);
+  return Object.values(pricing).some(value => value !== undefined && value !== null && value > 0);
 }
 
 function parseNumber(value: string | undefined): number | undefined {
@@ -161,9 +161,9 @@ export async function resolveModelPrice(input: ResolvePriceInput): Promise<Resol
   const litellm = findLiteLLMPrice(input.id, input.litellmMap, input.title);
   if (litellm) {
     const pricing = {
-      perImage: litellm.perImage,
-      perSecond: litellm.perSecond,
-      perCharacter: litellm.perCharacter,
+      perImage: litellm.perImage && litellm.perImage > 0 ? litellm.perImage : undefined,
+      perSecond: litellm.perSecond && litellm.perSecond > 0 ? litellm.perSecond : undefined,
+      perCharacter: litellm.perCharacter && litellm.perCharacter > 0 ? litellm.perCharacter : undefined,
     };
     if (hasPrice(pricing)) return { pricing, source: "litellm" };
   }
