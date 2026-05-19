@@ -1,8 +1,8 @@
 import { prisma } from "../lib/db.js";
 import { fetchOpenRouterModels } from "../lib/api/openrouter.js";
 import { fetchFalImageModels, fetchFalVideoModels, fetchFalAudioModels } from "../lib/api/fal.js";
+import { fetchElevenLabsAudioModels } from "../lib/api/elevenlabs.js";
 import { getBenchmark } from "../lib/data/benchmarks.js";
-import { getExternalAudioModels } from "../lib/data/external-audio.js";
 
 const PROVIDER_COUNTRY: Record<string, string> = {
   // USA
@@ -109,36 +109,17 @@ export async function syncAIModels() {
 
     try {
       console.log("Fetching models from APIs...");
-      const [textModels, imageModels, videoModels, audioModels] = await Promise.all([
+      const [textModels, imageModels, videoModels, falAudioModels, elevenLabsAudioModels] = await Promise.all([
         fetchOpenRouterModels(),
         fetchFalImageModels(),
         fetchFalVideoModels(),
         fetchFalAudioModels(),
+        fetchElevenLabsAudioModels(),
       ]);
 
-      const externalAudioModels = getExternalAudioModels();
-      const allAudioModels = [
-        ...audioModels,
-        ...externalAudioModels.map(m => ({
-          id: m.id,
-          name: m.name,
-          provider: m.provider,
-          description: m.description,
-          type: m.type,
-          pricing: { perCharacter: m.pricing.perCharacter },
-          languages: m.languages,
-          qualityScore: m.qualityScore,
-          naturalness: m.naturalness,
-          voiceCloning: m.voiceCloning,
-          emotionControl: m.emotionControl,
-          realtime: m.realtime,
-          runCount: m.runCount,
-          tags: m.tags,
-          popularity: m.popularity,
-        })),
-      ];
+      const allAudioModels = [...falAudioModels, ...elevenLabsAudioModels];
 
-      console.log(`Fetched: ${textModels.length} text, ${imageModels.length} image, ${videoModels.length} video, ${audioModels.length} replicate audio + ${externalAudioModels.length} external audio models`);
+      console.log(`Fetched: ${textModels.length} text, ${imageModels.length} image, ${videoModels.length} video, ${falAudioModels.length} FAL audio + ${elevenLabsAudioModels.length} ElevenLabs audio models`);
 
       console.log("Saving text models...");
       await saveTextModels(textModels);
