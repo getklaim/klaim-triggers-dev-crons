@@ -1,4 +1,5 @@
 import type { AudioModel } from "../types/models.js";
+import { resolveAudioQualityScore, scoreToPopularity } from "../scoring/media-score.js";
 
 interface ElevenLabsPricingCard {
   id: string;
@@ -135,19 +136,35 @@ export async function fetchElevenLabsAudioModels(): Promise<AudioModel[]> {
       cards = FALLBACK_PRICING_CARDS;
     }
 
-    const models = cards.map(card => ({
-      id: card.id,
-      name: card.name,
-      provider: "ElevenLabs",
-      description: DESCRIPTION_BY_NAME[card.name] || `${card.category} pricing from the public ElevenLabs API pricing page.`,
-      category: "audio" as const,
-      type: toAudioType(card.category),
-      pricing: toPricing(card),
-      languages: [],
-      tags: ["elevenlabs", "pricing-page"],
-      popularity: 0,
-      updatedAt: new Date().toISOString(),
-    }));
+    const models = cards.map((card, index) => {
+      const type = toAudioType(card.category);
+      const qualityScore = resolveAudioQualityScore({
+        id: card.id,
+        name: card.name,
+        provider: "ElevenLabs",
+        category: card.category,
+        audioType: type,
+        rankIndex: index,
+        totalCount: cards.length,
+      });
+
+      return {
+        id: card.id,
+        name: card.name,
+        provider: "ElevenLabs",
+        description: DESCRIPTION_BY_NAME[card.name] || `${card.category} pricing from the public ElevenLabs API pricing page.`,
+        category: "audio" as const,
+        type,
+        pricing: toPricing(card),
+        languages: [],
+        qualityScore,
+        naturalness: type === "tts" ? qualityScore : undefined,
+        accuracy: type === "stt" ? qualityScore : undefined,
+        tags: ["elevenlabs", "pricing-page"],
+        popularity: scoreToPopularity(qualityScore),
+        updatedAt: new Date().toISOString(),
+      };
+    });
 
     console.log(`Fetched ${models.length} ElevenLabs audio model families from pricing page`);
     return models;

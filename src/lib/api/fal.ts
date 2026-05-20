@@ -2,6 +2,12 @@ import type { ImageModel, VideoModel, AudioModel } from '../types/models.js';
 import { fetchArenaScores, findArenaScore } from './arena.js';
 import { fetchLiteLLMPricing } from './litellm.js';
 import { logPriceCoverage, resolveModelPrice, type PriceSource } from '../pricing/price-resolver.js';
+import {
+  resolveAudioQualityScore,
+  resolveImageQualityScore,
+  resolveVideoQualityScore,
+  scoreToPopularity,
+} from '../scoring/media-score.js';
 
 interface FalModel {
   id: string;
@@ -137,7 +143,7 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
     const falModelMap = new Map<string, FalModel>(filtered.map(m => [m.id, m]));
 
     const sourceByModelId = new Map<string, PriceSource>();
-    const imageModels: ImageModel[] = await Promise.all(filtered.map(async item => {
+    const imageModels: ImageModel[] = await Promise.all(filtered.map(async (item, index) => {
       const resolvedPrice = await resolveModelPrice({
         id: item.id,
         title: item.title,
@@ -147,12 +153,15 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
       });
       sourceByModelId.set(item.id, resolvedPrice.source);
       const arena = findArenaScore(item.title || item.id, arenaMap);
-
-      // Derive popularity from Arena score when available (score >= 1200 yields > 0)
-      let popularity = 0;
-      if (arena !== null && arena.score >= 1200) {
-        popularity = Math.min(100, Math.floor((arena.score - 1200) / 5));
-      }
+      const qualityScore = resolveImageQualityScore({
+        id: item.id,
+        name: item.title,
+        provider: item.modelLab,
+        category: item.category,
+        arenaScore: arena?.score,
+        rankIndex: index,
+        totalCount: filtered.length,
+      });
 
       return {
         id: item.id,
@@ -165,9 +174,9 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
           perMegapixel: resolvedPrice.pricing.perMegapixel,
           perSecond: resolvedPrice.pricing.perSecond,
         },
-        qualityScore: arena?.score,
+        qualityScore,
         tags: item.licenseType === 'commercial' ? ['commercial'] : ['open-source'],
-        popularity,
+        popularity: scoreToPopularity(qualityScore),
         updatedAt: item.publishedAt || new Date().toISOString(),
         runCount: undefined,
       };
@@ -208,7 +217,7 @@ export async function fetchFalVideoModels(): Promise<VideoModel[]> {
     const falModelMap = new Map<string, FalModel>(filtered.map(m => [m.id, m]));
 
     const sourceByModelId = new Map<string, PriceSource>();
-    const videoModels: VideoModel[] = await Promise.all(filtered.map(async item => {
+    const videoModels: VideoModel[] = await Promise.all(filtered.map(async (item, index) => {
       const resolvedPrice = await resolveModelPrice({
         id: item.id,
         title: item.title,
@@ -218,12 +227,15 @@ export async function fetchFalVideoModels(): Promise<VideoModel[]> {
       });
       sourceByModelId.set(item.id, resolvedPrice.source);
       const arena = findArenaScore(item.title || item.id, arenaMap);
-
-      // Derive popularity from Arena score when available (score >= 1200 yields > 0)
-      let popularity = 0;
-      if (arena !== null && arena.score >= 1200) {
-        popularity = Math.min(100, Math.floor((arena.score - 1200) / 5));
-      }
+      const qualityScore = resolveVideoQualityScore({
+        id: item.id,
+        name: item.title,
+        provider: item.modelLab,
+        category: item.category,
+        arenaScore: arena?.score,
+        rankIndex: index,
+        totalCount: filtered.length,
+      });
 
       return {
         id: item.id,
@@ -235,9 +247,9 @@ export async function fetchFalVideoModels(): Promise<VideoModel[]> {
           perSecond: resolvedPrice.pricing.perSecond,
           perVideo: resolvedPrice.pricing.perVideo,
         },
-        qualityScore: arena?.score,
+        qualityScore,
         tags: item.licenseType === 'commercial' ? ['commercial'] : ['open-source'],
-        popularity,
+        popularity: scoreToPopularity(qualityScore),
         updatedAt: item.publishedAt || new Date().toISOString(),
         runCount: undefined,
       };
@@ -276,11 +288,12 @@ function inferFalAudioType(item: FalModel): string {
     .join(' ')
     .toLowerCase();
 
+  if (item.category === 'audio-to-text') return 'stt';
+  if (item.category === 'speech-to-text') return 'stt';
+  if (/vad|voice[-\s]?activity|speech[-\s]?presence|speech[-\s]?detection/.test(searchText)) return 'stt';
   if (/transcri|speech[-\s]?to[-\s]?text|stt|whisper|scribe/.test(searchText)) return 'stt';
   if (/speech|voice|tts|text[-\s]?to[-\s]?speech|dub|clone/.test(searchText)) return 'tts';
 
-  if (item.category === 'audio-to-text') return 'stt';
-  if (item.category === 'speech-to-text') return 'stt';
   if (item.category === 'speech-to-speech') return 'tts';
   if (item.category === 'text-to-speech') return 'tts';
   if (item.category === 'text-to-audio') return 'music';
@@ -323,7 +336,7 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
     const falModelMap = new Map<string, FalModel>(filtered.map(m => [m.id, m]));
 
     const sourceByModelId = new Map<string, PriceSource>();
-    const audioModels: AudioModel[] = await Promise.all(filtered.map(async item => {
+    const audioModels: AudioModel[] = await Promise.all(filtered.map(async (item, index) => {
       const resolvedPrice = await resolveModelPrice({
         id: item.id,
         title: item.title,
@@ -333,6 +346,15 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
       });
       sourceByModelId.set(item.id, resolvedPrice.source);
       const audioType = inferFalAudioType(item);
+      const qualityScore = resolveAudioQualityScore({
+        id: item.id,
+        name: item.title,
+        provider: item.modelLab,
+        category: item.category,
+        audioType,
+        rankIndex: index,
+        totalCount: filtered.length,
+      });
 
       return {
         id: item.id,
@@ -347,8 +369,9 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
           perCharacter: resolvedPrice.pricing.perCharacter,
           perOutput: resolvedPrice.pricing.perOutput,
         },
+        qualityScore,
         tags: getFalAudioTags(item),
-        popularity: 0,
+        popularity: scoreToPopularity(qualityScore),
         updatedAt: item.publishedAt || new Date().toISOString(),
         runCount: undefined,
       };
