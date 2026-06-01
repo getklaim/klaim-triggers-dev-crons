@@ -2,6 +2,7 @@ import { prisma } from "../lib/db.js";
 import { fetchOpenRouterModels } from "../lib/api/openrouter.js";
 import { fetchFalImageModels, fetchFalVideoModels, fetchFalAudioModels } from "../lib/api/fal.js";
 import { fetchElevenLabsAudioModels } from "../lib/api/elevenlabs.js";
+import { fetchDeepgramAudioModels } from "../lib/api/deepgram.js";
 import { getBenchmark } from "../lib/data/benchmarks.js";
 
 const PROVIDER_COUNTRY: Record<string, string> = {
@@ -23,6 +24,7 @@ const PROVIDER_COUNTRY: Record<string, string> = {
   cohere: "Canada", mistralai: "France", deepcogito: "France",
   ai21: "Israel", "aion-labs": "Israel", upstage: "South Korea",
   rekaai: "UK", inception: "UAE", tngtech: "Germany",
+  deepgram: "USA",
   // FAL.ai / Replicate providers
   "black-forest-labs": "Germany", "stability-ai": "UK", midjourney: "USA",
   "runway": "USA", "pika-labs": "USA", "luma": "USA", "kling": "China",
@@ -109,17 +111,18 @@ export async function syncAIModels() {
 
     try {
       console.log("Fetching models from APIs...");
-      const [textModels, imageModels, videoModels, falAudioModels, elevenLabsAudioModels] = await Promise.all([
+      const [textModels, imageModels, videoModels, falAudioModels, elevenLabsAudioModels, deepgramAudioModels] = await Promise.all([
         fetchOpenRouterModels(),
         fetchFalImageModels(),
         fetchFalVideoModels(),
         fetchFalAudioModels(),
         fetchElevenLabsAudioModels(),
+        fetchDeepgramAudioModels(),
       ]);
 
-      const allAudioModels = [...falAudioModels, ...elevenLabsAudioModels];
+      const allAudioModels = [...falAudioModels, ...elevenLabsAudioModels, ...deepgramAudioModels];
 
-      console.log(`Fetched: ${textModels.length} text, ${imageModels.length} image, ${videoModels.length} video, ${falAudioModels.length} FAL audio + ${elevenLabsAudioModels.length} ElevenLabs audio models`);
+      console.log(`Fetched: ${textModels.length} text, ${imageModels.length} image, ${videoModels.length} video, ${falAudioModels.length} FAL audio + ${elevenLabsAudioModels.length} ElevenLabs audio + ${deepgramAudioModels.length} Deepgram audio models`);
 
       console.log("Saving text models...");
       await saveTextModels(textModels);

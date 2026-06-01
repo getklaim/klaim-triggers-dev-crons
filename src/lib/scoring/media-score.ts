@@ -43,6 +43,11 @@ const VIDEO_PRIORS: ScorePrior[] = [
 ];
 
 const AUDIO_PRIORS: ScorePrior[] = [
+  { pattern: /\bdeepgram.*nova[-\s]?3|nova[-\s]?3.*deepgram/i, score: 1185 },
+  { pattern: /\bdeepgram.*flux|flux.*deepgram/i, score: 1175 },
+  { pattern: /\bdeepgram.*aura[-\s]?2|aura[-\s]?2.*deepgram/i, score: 1145 },
+  { pattern: /\bdeepgram.*aura[-\s]?1|aura[-\s]?1.*deepgram/i, score: 1115 },
+  { pattern: /\bdeepgram.*voice[-\s]?agent|voice[-\s]?agent.*deepgram/i, score: 1165 },
   { pattern: /\belevenlabs.*multilingual|multilingual.*elevenlabs/i, score: 1180 },
   { pattern: /\belevenlabs.*flash|elevenlabs.*turbo|flash.*turbo/i, score: 1130 },
   { pattern: /\belevenlabs.*scribe|scribe/i, score: 1160 },
