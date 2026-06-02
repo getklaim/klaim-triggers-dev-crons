@@ -118,6 +118,84 @@ function deduplicateByFamily<T extends { id: string }>(
   return Array.from(familySeen.values());
 }
 
+function titleCaseSegment(segment: string): string {
+  const normalized: Record<string, string> = {
+    a14b: "A14B",
+    dev: "Dev",
+    lcm: "LCM",
+    pro: "Pro",
+    schnell: "Schnell",
+    sdxl: "SDXL",
+    standard: "Standard",
+    stream: "Stream",
+    turbo: "Turbo",
+    v1: "V1",
+    v2: "V2",
+    v3: "V3",
+  };
+  const key = segment.toLowerCase();
+  if (normalized[key]) return normalized[key];
+  return segment
+    .split("-")
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function qualifierFromModelId(modelId: string, name: string): string | null {
+  const parts = modelId.split("/").filter(Boolean);
+  const endpointParts = parts[0] === "fal-ai" ? parts.slice(1) : parts;
+  const genericSuffixes = new Set([
+    "audio",
+    "image-to-video",
+    "text-to-audio",
+    "text-to-image",
+    "text-to-speech",
+    "text-to-video",
+    "video-to-audio",
+  ]);
+  const meaningful = endpointParts.filter(part => !genericSuffixes.has(part));
+  const nameText = name.toLowerCase().replace(/[^a-z0-9]+/g, " ");
+  const compactNameText = nameText.replace(/\s+/g, "");
+  const candidates = meaningful.filter(part => {
+    const normalizedPart = part.toLowerCase().replace(/[^a-z0-9]+/g, " ");
+    const compactPart = normalizedPart.replace(/\s+/g, "");
+    return normalizedPart.length > 0 && !nameText.includes(normalizedPart) && !compactNameText.includes(compactPart);
+  });
+  const selected = candidates.length > 0
+    ? candidates.slice(-2)
+    : endpointParts.filter(part => genericSuffixes.has(part)).slice(-1);
+  if (selected.length === 0) return null;
+  return selected.map(titleCaseSegment).join(" ");
+}
+
+function getImageFamilyKey(model: FalModel): string {
+  if (model.id.startsWith("fal-ai/flux-1/")) {
+    return model.id.replace("fal-ai/flux-1/", "fal-ai/flux/");
+  }
+  if (model.id.startsWith("fal-ai/flux/")) {
+    return model.id;
+  }
+  return model.modelFamily || model.title || model.id;
+}
+
+function disambiguateDuplicateNames<T extends { id: string; name: string }>(models: T[]): T[] {
+  const counts = new Map<string, number>();
+  for (const model of models) {
+    const key = model.name.trim().toLowerCase();
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return models.map(model => {
+    const key = model.name.trim().toLowerCase();
+    if ((counts.get(key) ?? 0) <= 1) return model;
+
+    const qualifier = qualifierFromModelId(model.id, model.name);
+    if (!qualifier) return model;
+    return { ...model, name: `${model.name} (${qualifier})` };
+  });
+}
+
 export async function fetchFalImageModels(): Promise<ImageModel[]> {
   try {
     const [allModels, arenaMap, litellmMap] = await Promise.all([
@@ -184,13 +262,15 @@ export async function fetchFalImageModels(): Promise<ImageModel[]> {
 
     const deduplicated = deduplicateByFamily(
       imageModels,
-      m => m.modelFamily || m.title || m.id,
+      getImageFamilyKey,
       falModelMap
     );
 
-    logPriceCoverage('image', deduplicated, sourceByModelId);
-    console.log(`Fetched ${deduplicated.length} image models from FAL.ai`);
-    return deduplicated;
+    const disambiguated = disambiguateDuplicateNames(deduplicated);
+
+    logPriceCoverage('image', disambiguated, sourceByModelId);
+    console.log(`Fetched ${disambiguated.length} image models from FAL.ai`);
+    return disambiguated;
   } catch (error) {
     console.error('Failed to fetch FAL.ai image models:', error);
     return [];
@@ -261,9 +341,11 @@ export async function fetchFalVideoModels(): Promise<VideoModel[]> {
       falModelMap
     );
 
-    logPriceCoverage('video', deduplicated, sourceByModelId);
-    console.log(`Fetched ${deduplicated.length} video models from FAL.ai`);
-    return deduplicated;
+    const disambiguated = disambiguateDuplicateNames(deduplicated);
+
+    logPriceCoverage('video', disambiguated, sourceByModelId);
+    console.log(`Fetched ${disambiguated.length} video models from FAL.ai`);
+    return disambiguated;
   } catch (error) {
     console.error('Failed to fetch FAL.ai video models:', error);
     return [];
@@ -383,9 +465,11 @@ export async function fetchFalAudioModels(): Promise<AudioModel[]> {
       falModelMap
     );
 
-    logPriceCoverage('audio', deduplicated, sourceByModelId);
-    console.log(`Fetched ${deduplicated.length} audio models from FAL.ai`);
-    return deduplicated;
+    const disambiguated = disambiguateDuplicateNames(deduplicated);
+
+    logPriceCoverage('audio', disambiguated, sourceByModelId);
+    console.log(`Fetched ${disambiguated.length} audio models from FAL.ai`);
+    return disambiguated;
   } catch (error) {
     console.error('Failed to fetch FAL.ai audio models:', error);
     return [];

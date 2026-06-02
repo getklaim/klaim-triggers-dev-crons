@@ -28,13 +28,19 @@ interface ResolvePriceInput {
 }
 
 function hasPrice(pricing: ParsedPrice): boolean {
-  return Object.values(pricing).some(value => value !== undefined && value !== null && value > 0);
+  return Object.values(pricing).some(value => value !== undefined && value !== null && value >= 0);
 }
 
 function parseNumber(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const price = parseFloat(value);
   return price > 0 ? price : undefined;
+}
+
+function parseNonNegativeNumber(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const price = parseFloat(value);
+  return price >= 0 ? price : undefined;
 }
 
 function normalizePriceText(text: string): string {
@@ -47,11 +53,45 @@ function normalizePriceText(text: string): string {
     .trim();
 }
 
+function parseEndpointBilling(pricingText: string, type: PriceType): ParsedPrice {
+  const unescaped = pricingText.replace(/\\"/g, "\"");
+  const billingMatch = unescaped.match(/"endpointBilling":\{[^}]*"billing_unit":"([^"]+)"[^}]*"price":([0-9.]+)/);
+  if (!billingMatch) return {};
+
+  const unit = billingMatch[1].toLowerCase();
+  const price = parseNonNegativeNumber(billingMatch[2]);
+  if (price === undefined) return {};
+
+  if (type === "image") {
+    if (/megapixels?/.test(unit)) return { perMegapixel: price };
+    if (/images?|units?|requests?|compute seconds?/.test(unit)) return { perImage: price };
+    return {};
+  }
+
+  if (type === "video") {
+    if (/seconds?|compute seconds?/.test(unit)) return { perSecond: price };
+    if (/minutes?/.test(unit)) return { perSecond: price / 60 };
+    if (/videos?|units?/.test(unit)) return { perVideo: price };
+    return {};
+  }
+
+  if (/30 seconds?/.test(unit)) return { perOutput: price };
+  if (/seconds?|compute seconds?/.test(unit)) return { perSecond: price };
+  if (/minutes?/.test(unit)) return { perMinute: price };
+  if (/characters?|chars?/.test(unit)) return { perCharacter: price };
+  if (/generations?|outputs?|audio|videos?|units?/.test(unit)) return { perOutput: price };
+
+  return {};
+}
+
 export function parsePriceText(
   pricingText: string | undefined,
   type: PriceType
 ): ParsedPrice {
   if (!pricingText) return {};
+
+  const endpointBilling = parseEndpointBilling(pricingText, type);
+  if (hasPrice(endpointBilling)) return endpointBilling;
 
   const text = normalizePriceText(pricingText);
   const boldPricePattern = /\*\*\$?\s*([0-9]+\.?[0-9]*)\*\*/g;
